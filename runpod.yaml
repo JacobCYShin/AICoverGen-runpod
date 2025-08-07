@@ -1,0 +1,52 @@
+name: aicovergen
+base_image: nvidia/cuda:12.3.1-devel-ubuntu22.04
+python_version: "3.10"
+cuda_version: "12.3.1"
+system_packages:
+  - ffmpeg
+  - sox
+  - libsndfile1
+  - libportaudio2
+  - portaudio19-dev
+  - python3-pip
+  - python3-dev
+  - build-essential
+  - git
+
+python_packages:
+  - torch==2.1.0+cu121
+  - torchaudio==2.1.0+cu121
+  - torchvision==0.16.0+cu121
+  - numpy==1.24.3
+  - scipy
+  - librosa
+  - soundfile
+  - pedalboard
+  - pydub
+  - sox
+  - fairseq==0.12.2
+  - omegaconf==2.0.6
+  - hydra-core==1.0.7
+  - onnxruntime-gpu
+  - requests
+  - pathlib
+
+handler: handler.py::runpod_handler
+
+env_vars:
+  - CUDA_VISIBLE_DEVICES=0
+  - PYTORCH_CUDA_ALLOC_CONF=max_split_size_mb:512
+
+volumes:
+  - /runpod-volume/rvc_models:/runpod-volume/rvc_models
+  - /runpod-volume/mdxnet_models:/runpod-volume/mdxnet_models
+  - /runpod-volume/output:/runpod-volume/output
+
+ports:
+  - 8000
+
+resources:
+  gpu: 1
+  cpu: 4
+  memory: 16G
+  disk: 20G

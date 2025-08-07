@@ -1,0 +1,40 @@
+# Core dependencies
+numpy==1.23.5
+scipy
+librosa
+soundfile
+
+# Audio processing
+ffmpeg-python
+praat-parselmouth
+pedalboard
+pydub
+pyworld
+sox
+
+# Machine learning
+faiss-cpu
+onnxruntime_gpu
+
+# Web interface
+gradio
+
+# Utilities
+tqdm
+requests
+lib
+
+# Audio download
+yt_dlp
+
+# PyTorch with CUDA support
+--find-links https://download.pytorch.org/whl/torch_stable.html
+torch
+
+# Voice conversion
+torchcrepe
+
+# Fairseq with stable version
+omegaconf==2.0.6
+hydra-core==1.0.7
+fairseq==0.12.2

@@ -1,0 +1,8 @@
+# RVC Models
+rvc_models/
+mdxnet_models/
+
+# Output
+song_output/
+# Replicate
+*.zip
