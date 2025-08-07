@@ -40,6 +40,7 @@ RUN pip install torch torchvision torchaudio --index-url https://download.pytorc
 RUN pip install torchcrepe
 RUN pip install omegaconf==2.0.6 hydra-core==1.0.7
 RUN pip install fairseq==0.12.2
+RUN pip install runpod
 
 # RVC 기본 모델 다운로드
 RUN python3 download_base_models.py

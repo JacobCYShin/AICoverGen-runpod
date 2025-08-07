@@ -1,3 +1,6 @@
+""" AICoverGen Handler for RunPod Serverless """
+
+import runpod
 import os
 import json
 import base64
@@ -11,7 +14,6 @@ import hashlib
 
 # AICoverGen imports
 import sys
-import os
 
 # Add src directory to Python path
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -359,26 +361,24 @@ class AICoverGenHandler:
 # Global handler instance
 handler = AICoverGenHandler()
 
-def runpod_handler(event, context):
+def handler(job):
     """
-    Main handler function for RunPod
+    Handler function that will be used to process jobs.
     
     Args:
-        event: The event data from RunPod
-        context: The context object
+        job: The job object containing input data
         
     Returns:
         Dict containing the response
     """
     try:
-        # Parse the input
-        if isinstance(event, str):
-            input_data = json.loads(event)
-        else:
-            input_data = event
+        # Get job input
+        job_input = job["input"]
         
         # Get the operation type
-        operation = input_data.get("operation", "generate_cover")
+        operation = job_input.get("operation", "generate_cover_from_separate_audio")
+        
+        print(f"Processing operation: {operation}")
         
         # Route to appropriate handler method
         if operation == "health_check":
@@ -387,7 +387,7 @@ def runpod_handler(event, context):
             return handler.list_models()
         elif operation == "generate_cover_from_separate_audio":
             # Extract parameters for cover generation from separate audio files
-            params = input_data.get("params", {})
+            params = job_input.get("params", {})
             return handler.generate_cover_from_separate_audio(**params)
         else:
             return {
@@ -397,7 +397,12 @@ def runpod_handler(event, context):
     except Exception as e:
         import traceback
         error_traceback = traceback.format_exc()
+        print(f"Handler error: {str(e)}")
+        print(f"Traceback: {error_traceback}")
         return {
             "error": f"Handler error: {str(e)}",
             "traceback": error_traceback
         }
+
+# Start the serverless handler
+runpod.serverless.start({"handler": handler})

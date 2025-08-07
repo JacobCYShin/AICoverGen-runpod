@@ -9,17 +9,84 @@ import base64
 import json
 import time
 import os
+import argparse
+import sys
 
-# ====== 사용자 설정 ======
-API_KEY = ""  # RunPod API 키 입력
-ENDPOINT_ID = ""  # RunPod Endpoint ID 입력
+# ====== 커맨드 라인 인자 파싱 ======
+def parse_arguments():
+    """커맨드 라인 인자를 파싱합니다."""
+    parser = argparse.ArgumentParser(
+        description="RunPod Serverless AICoverGen API 테스트",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+사용 예시:
+  python test_runpod_aicovergen.py --api-key YOUR_API_KEY --endpoint-id YOUR_ENDPOINT_ID
+  python test_runpod_aicovergen.py -k YOUR_API_KEY -e YOUR_ENDPOINT_ID
+        """
+    )
+    
+    parser.add_argument(
+        "--api-key", "-k",
+        required=True,
+        help="RunPod API 키"
+    )
+    
+    parser.add_argument(
+        "--endpoint-id", "-e", 
+        required=True,
+        help="RunPod Endpoint ID"
+    )
+    
+    parser.add_argument(
+        "--voice-audio", "-v",
+        default="tmp/Vocals_No_Noise.wav",
+        help="보컬 오디오 파일 경로 (기본값: tmp/Vocals_No_Noise.wav)"
+    )
+    
+    parser.add_argument(
+        "--instrument-audio", "-i",
+        default="tmp/Instrumental.wav", 
+        help="악기 오디오 파일 경로 (기본값: tmp/Instrumental.wav)"
+    )
+    
+    parser.add_argument(
+        "--voice-model", "-m",
+        default="Jungkook",
+        help="사용할 보이스 모델명 (기본값: Jungkook)"
+    )
+    
+    parser.add_argument(
+        "--pitch-adjust", "-p",
+        type=int,
+        default=0,
+        help="피치 조정 (-12 ~ +12, 기본값: 0)"
+    )
+    
+    parser.add_argument(
+        "--output-format", "-f",
+        choices=["mp3", "wav"],
+        default="mp3",
+        help="출력 포맷 (기본값: mp3)"
+    )
+    
+    parser.add_argument(
+        "--test-mode",
+        choices=["basic", "multiple-models", "pitch-variations", "different-formats"],
+        default="basic",
+        help="테스트 모드 (기본값: basic)"
+    )
+    
+    return parser.parse_args()
 
-# ====== 테스트 설정 ======
-VOICE_AUDIO_PATH = "tmp/Vocals_No_Noise.wav"  # 보컬 오디오 파일 경로
-INSTRUMENT_AUDIO_PATH = "tmp/Instrumental.wav"  # 악기 오디오 파일 경로
-VOICE_MODEL = "Jungkook"  # 사용할 보이스 모델명
-PITCH_ADJUST = 0  # 피치 조정 (-12 ~ +12)
-OUTPUT_FORMAT = "mp3"  # 출력 포맷 (mp3, wav)
+# ====== 전역 변수 ======
+# 커맨드 라인 인자에서 설정됨
+API_KEY = None
+ENDPOINT_ID = None
+VOICE_AUDIO_PATH = None
+INSTRUMENT_AUDIO_PATH = None
+VOICE_MODEL = None
+PITCH_ADJUST = None
+OUTPUT_FORMAT = None
 
 # ====== 함수 정의 ======
 def encode_audio_to_base64(file_path):
@@ -36,7 +103,11 @@ def decode_base64_to_audio(base64_string, output_path):
 
 def test_health_check():
     """헬스체크 테스트"""
-    url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/runsync"
+    # ENDPOINT_ID가 전체 URL인지 확인
+    if ENDPOINT_ID.startswith("http"):
+        url = ENDPOINT_ID.replace("/run", "/runsync")
+    else:
+        url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/runsync"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
@@ -71,7 +142,11 @@ def test_health_check():
 
 def test_list_models():
     """사용 가능한 모델 목록 테스트"""
-    url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/runsync"
+    # ENDPOINT_ID가 전체 URL인지 확인
+    if ENDPOINT_ID.startswith("http"):
+        url = ENDPOINT_ID.replace("/run", "/runsync")
+    else:
+        url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/runsync"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
@@ -121,7 +196,11 @@ def test_generate_cover():
         return
 
     # 2. API 요청 구성
-    url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/runsync"
+    # ENDPOINT_ID가 전체 URL인지 확인
+    if ENDPOINT_ID.startswith("http"):
+        url = ENDPOINT_ID.replace("/run", "/runsync")
+    else:
+        url = f"https://api.runpod.ai/v2/{ENDPOINT_ID}/runsync"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json"
@@ -255,13 +334,33 @@ def test_different_formats():
 
 # ====== 실행 ======
 if __name__ == "__main__":
+    # 커맨드 라인 인자 파싱
+    args = parse_arguments()
+    
+    # 전역 변수 설정
+    API_KEY = args.api_key
+    ENDPOINT_ID = args.endpoint_id
+    VOICE_AUDIO_PATH = args.voice_audio
+    INSTRUMENT_AUDIO_PATH = args.instrument_audio
+    VOICE_MODEL = args.voice_model
+    PITCH_ADJUST = args.pitch_adjust
+    OUTPUT_FORMAT = args.output_format
+    
     print("🎵 RunPod Serverless AICoverGen API 테스트 시작")
+    print("="*60)
+    print(f"📋 설정 정보:")
+    print(f"   - Endpoint ID: {ENDPOINT_ID}")
+    print(f"   - 보이스 모델: {VOICE_MODEL}")
+    print(f"   - 피치 조정: {PITCH_ADJUST}")
+    print(f"   - 출력 포맷: {OUTPUT_FORMAT}")
+    print(f"   - 보컬 파일: {VOICE_AUDIO_PATH}")
+    print(f"   - 악기 파일: {INSTRUMENT_AUDIO_PATH}")
     print("="*60)
 
     # 1. 헬스체크
     if not test_health_check():
         print("❌ 서버가 정상 작동하지 않습니다. 종료합니다.")
-        exit(1)
+        sys.exit(1)
 
     print("\n" + "="*60)
 
@@ -276,12 +375,14 @@ if __name__ == "__main__":
 
     print("\n" + "="*60)
 
-    # 3. 기본 테스트
-    test_generate_cover()
-
-    # 추가 테스트 (주석 해제하여 사용)
-    # test_multiple_models()
-    # test_pitch_variations()
-    # test_different_formats()
+    # 3. 테스트 모드에 따른 실행
+    if args.test_mode == "basic":
+        test_generate_cover()
+    elif args.test_mode == "multiple-models":
+        test_multiple_models()
+    elif args.test_mode == "pitch-variations":
+        test_pitch_variations()
+    elif args.test_mode == "different-formats":
+        test_different_formats()
 
     print("\n🎉 모든 테스트 완료!")

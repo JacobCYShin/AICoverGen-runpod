@@ -38,3 +38,6 @@ torchcrepe
 omegaconf==2.0.6
 hydra-core==1.0.7
 fairseq==0.12.2
+
+# RunPod Serverless
+runpod
