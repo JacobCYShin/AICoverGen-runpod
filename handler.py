@@ -1,12 +1,15 @@
 """ AICoverGen Handler for RunPod Serverless """
 
-import runpod
 import os
 import json
 import base64
 import tempfile
+import logging
 import shutil
 from typing import Dict, Any, Optional
+import traceback
+
+import runpod
 import torch
 import numpy as np
 import gc
@@ -20,8 +23,12 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 src_path = os.path.join(current_dir, 'src')
 sys.path.insert(0, src_path)
 
-from rvc import Config, load_hubert, get_vc, rvc_infer
-from webui import get_current_models, rvc_models_dir, mdxnet_models_dir, output_dir
+try:
+    from rvc import Config, load_hubert, get_vc, rvc_infer
+    from webui import get_current_models, rvc_models_dir, mdxnet_models_dir, output_dir
+except ImportError as e:
+    logger.error(f"AICoverGen 모듈 import 실패: {e}")
+    raise
 
 # Override paths for RunPod Serverless
 RUNPOD_RVC_MODELS_DIR = "/runpod-volume/rvc_models"
@@ -29,26 +36,50 @@ RUNPOD_MDXNET_MODELS_DIR = "/runpod-volume/mdxnet_models"
 RUNPOD_OUTPUT_DIR = "/runpod-volume/output"
 
 # Audio processing imports
-from pedalboard import Pedalboard, Reverb, Compressor, HighpassFilter
-from pedalboard.io import AudioFile
-from pydub import AudioSegment
-import soundfile as sf
-import sox
+try:
+    from pedalboard import Pedalboard, Reverb, Compressor, HighpassFilter
+    from pedalboard.io import AudioFile
+    from pydub import AudioSegment
+    import soundfile as sf
+    import sox
+except ImportError as e:
+    logger.error(f"Audio processing 모듈 import 실패: {e}")
+    raise
+
+# 로깅 설정
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Ensure directories exist
 os.makedirs(RUNPOD_RVC_MODELS_DIR, exist_ok=True)
 os.makedirs(RUNPOD_MDXNET_MODELS_DIR, exist_ok=True)
 os.makedirs(RUNPOD_OUTPUT_DIR, exist_ok=True)
 
+# 전역 변수로 AICoverGenHandler 인스턴스 저장 (Cold start 최적화)
+aicovergen_handler = None
+
+def load_aicovergen_handler():
+    """AICoverGenHandler 인스턴스를 로드하고 모델을 준비합니다."""
+    global aicovergen_handler
+    if aicovergen_handler is None:
+        try:
+            logger.info("AICoverGenHandler 인스턴스를 초기화하고 모델을 로드합니다...")
+            aicovergen_handler = AICoverGenHandler()
+            logger.info("AICoverGenHandler 초기화 완료")
+        except Exception as e:
+            logger.error(f"AICoverGenHandler 초기화 실패: {str(e)}")
+            raise
+    return aicovergen_handler
+
 class AICoverGenHandler:
     def __init__(self):
         """Initialize the AICoverGen handler"""
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"Using device: {self.device}")
+        logger.info(f"Using device: {self.device}")
         
         # Load available models from RunPod volume
         self.voice_models = get_current_models(RUNPOD_RVC_MODELS_DIR)
-        print(f"Available voice models: {self.voice_models}")
+        logger.info(f"Available voice models: {self.voice_models}")
         
         # Set torch to use memory efficiently for serverless
         if torch.cuda.is_available():
@@ -106,7 +137,7 @@ class AICoverGenHandler:
         import numpy as np
         from pedalboard import Pedalboard, Reverb, Compressor
         
-        print(f"[~] Simple audio effects: {audio_path}")
+        logger.info(f"[~] Simple audio effects: {audio_path}")
         
         # Load audio with lower sample rate for speed
         y, sr = librosa.load(audio_path, sr=22050)
@@ -130,7 +161,7 @@ class AICoverGenHandler:
         output_path = f'{os.path.splitext(audio_path)[0]}_mixed.wav'
         sf.write(output_path, effected, sr)
         
-        print(f"[+] Simple effects applied: {output_path}")
+        logger.info(f"[+] Simple effects applied: {output_path}")
         
         return output_path
     
@@ -141,7 +172,7 @@ class AICoverGenHandler:
         import soundfile as sf
         import numpy as np
         
-        print(f"[~] Simple mixing: {audio_paths}")
+        logger.info(f"[~] Simple mixing: {audio_paths}")
         
         # Load all audio files
         audio_signals = []
@@ -152,7 +183,7 @@ class AICoverGenHandler:
                 y, sr = librosa.load(path, sr=22050)
                 audio_signals.append(y)
             else:
-                print(f"Warning: {path} not found, using silence")
+                logger.warning(f"Warning: {path} not found, using silence")
                 audio_signals.append(np.zeros(22050 * 10))
         
         # Ensure all signals have same length
@@ -191,9 +222,9 @@ class AICoverGenHandler:
         # Save the final mix
         sf.write(output_path, final_mix, 22050)
         
-        print(f"[+] Simple mixing completed: {output_path}")
-        print(f"    - Duration: {len(final_mix) / 22050:.2f} seconds")
-        print(f"    - Peak level: {np.max(np.abs(final_mix)):.3f}")
+        logger.info(f"[+] Simple mixing completed: {output_path}")
+        logger.info(f"    - Duration: {len(final_mix) / 22050:.2f} seconds")
+        logger.info(f"    - Peak level: {np.max(np.abs(final_mix)):.3f}")
         
         return output_path
     
@@ -284,19 +315,19 @@ class AICoverGenHandler:
                 pitch_change = pitch_adjust * 12 + pitch_change_all
                 ai_vocals_path = os.path.join(song_dir, f'voice_{voice_model}_p{pitch_change}_i{index_rate}_fr{filter_radius}_rms{rms_mix_rate}_pro{protect}_{f0_method}{"" if f0_method != "mangio-crepe" else f"_{crepe_hop_length}"}.wav')
                 
-                print('[~] Converting voice using RVC...')
+                logger.info('[~] Converting voice using RVC...')
                 self.voice_change(voice_model, voice_path, ai_vocals_path, pitch_change, 
                                 f0_method, index_rate, filter_radius, rms_mix_rate, 
                                 protect, crepe_hop_length)
                 
                 # Apply audio effects to vocals (main.py 294-295 lines equivalent)
-                print('[~] Applying audio effects to Vocals...')
+                logger.info('[~] Applying audio effects to Vocals...')
                 ai_vocals_mixed_path = self.add_audio_effects(ai_vocals_path, reverb_rm_size, 
                                                             reverb_wet, reverb_dry, reverb_damping)
                 
                 # Apply overall pitch change if needed (main.py 297-300 lines equivalent)
                 if pitch_change_all != 0:
-                    print('[~] Applying overall pitch change')
+                    logger.info('[~] Applying overall pitch change')
                     instrument_path = self.pitch_shift(instrument_path, pitch_change_all)
                     # For backup vocals, we'll use the original voice with pitch shift
                     backup_vocals_path = self.pitch_shift(voice_path, pitch_change_all)
@@ -304,7 +335,7 @@ class AICoverGenHandler:
                     backup_vocals_path = voice_path
                 
                 # Combine AI vocals and instrumentals (main.py 302-303 lines equivalent)
-                print('[~] Combining AI Vocals and Instrumentals...')
+                logger.info('[~] Combining AI Vocals and Instrumentals...')
                 ai_cover_path = os.path.join(song_dir, f'cover_{voice_model}.{output_format}')
                 self.combine_audio([ai_vocals_mixed_path, backup_vocals_path, instrument_path], 
                                  ai_cover_path, main_gain, backup_gain, inst_gain, output_format)
@@ -345,8 +376,8 @@ class AICoverGenHandler:
                 }
                         
         except Exception as e:
-            import traceback
-            error_traceback = traceback.format_exc()
+            logger.error(f"Error during cover generation: {str(e)}")
+            logger.error(traceback.format_exc())
             
             # Clean up GPU memory
             if torch.cuda.is_available():
@@ -355,54 +386,89 @@ class AICoverGenHandler:
             
             return {
                 "error": f"Error during cover generation: {str(e)}",
-                "traceback": error_traceback
+                "traceback": traceback.format_exc()
             }
-
-# Global handler instance
-handler = AICoverGenHandler()
 
 def handler(job):
     """
-    Handler function that will be used to process jobs.
+    RunPod Serverless 핸들러 함수
     
     Args:
-        job: The job object containing input data
+        job: RunPod에서 전달하는 작업 데이터
         
     Returns:
-        Dict containing the response
+        Dict: 처리 결과
     """
     try:
-        # Get job input
-        job_input = job["input"]
+        job_input = job.get("input", {})
+        logger.info(f"작업 입력: {job_input}")
         
-        # Get the operation type
+        # 작업 타입 확인
         operation = job_input.get("operation", "generate_cover_from_separate_audio")
         
-        print(f"Processing operation: {operation}")
+        logger.info(f"Processing operation: {operation}")
+        
+        # AICoverGenHandler 인스턴스 로드
+        handler_instance = load_aicovergen_handler()
         
         # Route to appropriate handler method
         if operation == "health_check":
-            return handler.health_check()
+            return handler_instance.health_check()
         elif operation == "list_models":
-            return handler.list_models()
+            return handler_instance.list_models()
         elif operation == "generate_cover_from_separate_audio":
             # Extract parameters for cover generation from separate audio files
             params = job_input.get("params", {})
-            return handler.generate_cover_from_separate_audio(**params)
+            return handler_instance.generate_cover_from_separate_audio(**params)
         else:
             return {
                 "error": f"Unknown operation: {operation}. Available operations: health_check, list_models, generate_cover_from_separate_audio"
             }
             
     except Exception as e:
-        import traceback
-        error_traceback = traceback.format_exc()
-        print(f"Handler error: {str(e)}")
-        print(f"Traceback: {error_traceback}")
+        logger.error(f"핸들러 오류: {str(e)}")
+        logger.error(traceback.format_exc())
         return {
-            "error": f"Handler error: {str(e)}",
-            "traceback": error_traceback
+            "error": "Internal server error",
+            "message": str(e)
         }
 
-# Start the serverless handler
-runpod.serverless.start({"handler": handler})
+# Cold start 최적화: 컨테이너 시작 시 모델 미리 로드
+try:
+    logger.info("컨테이너 시작 시 모델 미리 로드 중...")
+    load_aicovergen_handler()
+    logger.info("Cold start 최적화 완료")
+except Exception as e:
+    logger.error(f"Cold start 최적화 실패: {str(e)}")
+
+# 로컬 테스트용 함수
+def test_local():
+    """로컬 테스트용 함수"""
+    print("=== 로컬 테스트 시작 ===")
+    
+    # 헬스체크 테스트
+    print("1. 헬스체크 테스트")
+    try:
+        handler_instance = load_aicovergen_handler()
+        result = handler_instance.health_check()
+        print(f"결과: {result}")
+    except Exception as e:
+        print(f"오류: {e}")
+    
+    # 모델 목록 조회 테스트
+    print("2. 모델 목록 조회 테스트")
+    try:
+        result = handler_instance.list_models()
+        print(f"결과: {result}")
+    except Exception as e:
+        print(f"오류: {e}")
+    
+    print("\n=== 로컬 테스트 완료 ===")
+
+# RunPod Serverless 시작
+if __name__ == "__main__":
+    # 로컬 테스트 모드 확인
+    if os.getenv("LOCAL_TEST", "false").lower() == "true":
+        test_local()
+    else:
+        runpod.serverless.start({"handler": handler})

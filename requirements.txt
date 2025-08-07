@@ -1,35 +1,37 @@
 # Core dependencies
-numpy==1.23.5
+numpy>=2
 scipy
-librosa
+librosa>=0.10
 soundfile
 
 # Audio processing
 ffmpeg-python
 praat-parselmouth
 pedalboard
-pydub
+pydub>=0.25
 pyworld
 sox
 
 # Machine learning
 faiss-cpu
-onnxruntime_gpu
+onnxruntime-gpu>=1.17
 
 # Web interface
 gradio
 
 # Utilities
 tqdm
-requests
+requests>=2
 lib
 
 # Audio download
 yt_dlp
 
 # PyTorch with CUDA support
+torch>=2.3
+torchvision
+torchaudio
 --find-links https://download.pytorch.org/whl/torch_stable.html
-torch
 
 # Voice conversion
 torchcrepe
