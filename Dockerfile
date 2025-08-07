@@ -23,7 +23,7 @@ RUN apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Python 패키지 업데이트
-RUN python3 -m pip install --upgrade pip
+RUN python3 -m pip install --upgrade pip==23.3.1 setuptools wheel
 
 # Python 심볼릭 링크 생성 (python 명령어도 사용 가능하도록)
 RUN ln -sf /usr/bin/python3 /usr/bin/python
@@ -37,20 +37,22 @@ WORKDIR /workspace
 # 필요한 파일들을 컨테이너에 복사
 COPY . /workspace/
 
-# CUDA 12 호환 ONNX Runtime 설치
-RUN pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
-
-# Python 의존성 설치
-RUN pip install -r requirements.txt
+# Python 의존성 설치 (단계별로 설치)
+RUN pip install numpy==1.24.3 scipy librosa soundfile
+RUN pip install ffmpeg-python praat-parselmouth pedalboard pydub pyworld sox
+RUN pip install faiss-cpu onnxruntime-gpu
+RUN pip install gradio tqdm requests lib
+RUN pip install yt_dlp
+RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+RUN pip install torchcrepe
+RUN pip install omegaconf==2.0.6 hydra-core==1.0.7
+RUN pip install fairseq==0.12.2
+RUN pip install runpod
 
 # 모델 캐시 디렉토리 생성
 RUN mkdir -p /runpod-volume/rvc_models
 RUN mkdir -p /runpod-volume/mdxnet_models
 RUN mkdir -p /runpod-volume/output
-
-# 환경 변수 설정
-ENV PYTHONPATH=/workspace/src
-ENV CUDA_VISIBLE_DEVICES=0
 
 # RVC 기본 모델 다운로드
 RUN python3 download_base_models.py
