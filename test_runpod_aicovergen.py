@@ -11,6 +11,9 @@ import time
 import os
 import argparse
 import sys
+import subprocess
+import shutil
+import tempfile
 
 # ====== 커맨드 라인 인자 파싱 ======
 def parse_arguments():
@@ -76,6 +79,13 @@ def parse_arguments():
         help="테스트 모드 (기본값: basic)"
     )
     
+    parser.add_argument(
+        "--trim-seconds",
+        type=int,
+        default=0,
+        help="전송 전에 로컬에서 오디오 길이를 앞부분 N초로 트리밍하여 페이로드를 줄입니다. 0이면 비활성화"
+    )
+    
     return parser.parse_args()
 
 # ====== 전역 변수 ======
@@ -87,12 +97,21 @@ INSTRUMENT_AUDIO_PATH = None
 VOICE_MODEL = None
 PITCH_ADJUST = None
 OUTPUT_FORMAT = None
+TRIM_SECONDS = 0
 
-# ====== 함수 정의 ======
+# ====== 유틸 ======
+def unwrap_runpod_output(result: dict) -> dict:
+    """RunPod runsync 응답에서 output 키가 있으면 언래핑합니다."""
+    if isinstance(result, dict) and "output" in result and isinstance(result["output"], dict):
+        return result["output"]
+    return result
+
+
 def encode_audio_to_base64(file_path):
     """오디오 파일을 base64로 인코딩"""
     with open(file_path, "rb") as audio_file:
         return base64.b64encode(audio_file.read()).decode("utf-8")
+
 
 def decode_base64_to_audio(base64_string, output_path):
     """base64를 오디오 파일로 디코딩"""
@@ -101,6 +120,39 @@ def decode_base64_to_audio(base64_string, output_path):
         f.write(audio_data)
     return output_path
 
+
+def maybe_trim_audio(input_path: str, trim_seconds: int) -> str:
+    """ffmpeg가 있으면 앞부분 N초만 잘라 임시 파일로 저장해 반환합니다. 실패 시 원본 경로 반환."""
+    if trim_seconds <= 0:
+        return input_path
+    if not shutil.which("ffmpeg"):
+        print("⚠️ ffmpeg가 없어 트리밍을 건너뜁니다.")
+        return input_path
+    try:
+        tmp_dir = tempfile.mkdtemp(prefix="aicovergen_trim_")
+        output_path = os.path.join(tmp_dir, os.path.splitext(os.path.basename(input_path))[0] + f"_trim{trim_seconds}.wav")
+        cmd = [
+            "ffmpeg", "-y",
+            "-t", str(trim_seconds),
+            "-i", input_path,
+            "-ac", "2",
+            "-ar", "44100",
+            output_path,
+        ]
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            print(f"✂️ 트리밍 완료: {output_path}")
+            return output_path
+        else:
+            print("⚠️ 트리밍 실패, 원본 파일 사용")
+            # 디버그 출력 일부
+            print(res.stdout[-500:])
+            return input_path
+    except Exception as e:
+        print(f"⚠️ 트리밍 중 오류: {e}")
+        return input_path
+
+# ====== 함수 정의 ======
 def test_health_check():
     """헬스체크 테스트"""
     # ENDPOINT_ID가 전체 URL인지 확인
@@ -125,7 +177,7 @@ def test_health_check():
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         
         if response.status_code == 200:
-            result = response.json()
+            result = unwrap_runpod_output(response.json())
             print("✅ 서버 정상 작동")
             print(f"   - 디바이스: {result.get('device', 'N/A')}")
             print(f"   - GPU 사용 가능: {result.get('gpu_available', 'N/A')}")
@@ -139,6 +191,7 @@ def test_health_check():
     except Exception as e:
         print(f"❌ 헬스체크 중 오류: {str(e)}")
         return False
+
 
 def test_list_models():
     """사용 가능한 모델 목록 테스트"""
@@ -164,7 +217,7 @@ def test_list_models():
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         
         if response.status_code == 200:
-            result = response.json()
+            result = unwrap_runpod_output(response.json())
             models = result.get('models', [])
             count = result.get('count', 0)
             print(f"✅ 모델 목록 조회 완료")
@@ -180,14 +233,23 @@ def test_list_models():
         print(f"❌ 모델 목록 조회 중 오류: {str(e)}")
         return []
 
+
 def test_generate_cover():
     """AI 커버 생성 테스트"""
+
+    # 0. 옵션에 따라 파일 트리밍
+    voice_path = VOICE_AUDIO_PATH
+    inst_path = INSTRUMENT_AUDIO_PATH
+    if TRIM_SECONDS and TRIM_SECONDS > 0:
+        print(f"✂️ 전송 전 트리밍 적용: 앞부분 {TRIM_SECONDS}초")
+        voice_path = maybe_trim_audio(voice_path, TRIM_SECONDS)
+        inst_path = maybe_trim_audio(inst_path, TRIM_SECONDS)
 
     # 1. 입력 오디오 → base64 인코딩
     print("🎵 오디오 파일 인코딩 중...")
     try:
-        voice_audio = encode_audio_to_base64(VOICE_AUDIO_PATH)
-        instrument_audio = encode_audio_to_base64(INSTRUMENT_AUDIO_PATH)
+        voice_audio = encode_audio_to_base64(voice_path)
+        instrument_audio = encode_audio_to_base64(inst_path)
         print(f"✅ 인코딩 완료")
         print(f"   - 보컬 파일 크기: {len(voice_audio)} chars")
         print(f"   - 악기 파일 크기: {len(instrument_audio)} chars")
@@ -260,17 +322,18 @@ def test_generate_cover():
 
     # 4. 응답 결과 처리
     try:
-        result = response.json()
+        result_raw = response.json()
+        result = unwrap_runpod_output(result_raw)
         print("✅ 응답 수신 완료")
 
-        if "error" in result:
+        if isinstance(result, dict) and "error" in result:
             print(f"❌ 서버 에러: {result['error']}")
             if "traceback" in result:
                 print(f"상세 에러: {result['traceback']}")
             return
 
         # 출력 오디오 추출
-        if "output_audio" in result:
+        if isinstance(result, dict) and "output_audio" in result:
             output_base64 = result["output_audio"]
 
             # 5. 디코딩 및 저장
@@ -310,6 +373,7 @@ def test_multiple_models():
         test_generate_cover()
         time.sleep(3)  # 요청 간 간격
 
+
 def test_pitch_variations():
     """다양한 피치로 테스트"""
     pitches = [-2, 0, 2]  # 낮음, 원본, 높음
@@ -320,6 +384,7 @@ def test_pitch_variations():
         PITCH_ADJUST = pitch
         test_generate_cover()
         time.sleep(3)
+
 
 def test_different_formats():
     """다양한 출력 포맷 테스트"""
@@ -345,6 +410,7 @@ if __name__ == "__main__":
     VOICE_MODEL = args.voice_model
     PITCH_ADJUST = args.pitch_adjust
     OUTPUT_FORMAT = args.output_format
+    TRIM_SECONDS = args.trim_seconds
     
     print("🎵 RunPod Serverless AICoverGen API 테스트 시작")
     print("="*60)
@@ -355,6 +421,8 @@ if __name__ == "__main__":
     print(f"   - 출력 포맷: {OUTPUT_FORMAT}")
     print(f"   - 보컬 파일: {VOICE_AUDIO_PATH}")
     print(f"   - 악기 파일: {INSTRUMENT_AUDIO_PATH}")
+    if TRIM_SECONDS and TRIM_SECONDS > 0:
+        print(f"   - 트리밍: 앞부분 {TRIM_SECONDS}초 전송")
     print("="*60)
 
     # 1. 헬스체크

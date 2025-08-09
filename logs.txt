@@ -1,0 +1,39 @@
+2025-08-09T12:19:51.819809901Z ==========
+2025-08-09T12:19:51.819813518Z == CUDA ==
+2025-08-09T12:19:51.819863974Z ==========
+2025-08-09T12:19:51.827150517Z CUDA Version 12.1.0
+2025-08-09T12:19:51.829808203Z Container image Copyright (c) 2016-2023, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+2025-08-09T12:19:51.831611259Z This container image and its contents are governed by the NVIDIA Deep Learning Container License.
+2025-08-09T12:19:51.831615958Z By pulling and using the container, you accept the terms and conditions of this license:
+2025-08-09T12:19:51.831619013Z https://developer.nvidia.com/ngc/nvidia-deep-learning-container-license
+2025-08-09T12:19:51.831624353Z A copy of this license is made available in this container at /NGC-DL-CONTAINER-LICENSE for your convenience.
+2025-08-09T12:19:51.856603402Z *************************
+2025-08-09T12:19:51.856624321Z ** DEPRECATION NOTICE! **
+2025-08-09T12:19:51.856793198Z *************************
+2025-08-09T12:19:51.856799471Z THIS IMAGE IS DEPRECATED and is scheduled for DELETION.
+2025-08-09T12:19:51.856803248Z     https://gitlab.com/nvidia/container-images/cuda/blob/master/doc/support-policy.md
+2025-08-09T12:19:56.914504778Z text_to_speech.py   :34   2025-08-09 12:19:56,914 Please install tensorboardX: pip install tensorboardX
+2025-08-09T12:19:58.186942161Z loader.py           :125  2025-08-09 12:19:58,186 Loading faiss with AVX2 support.
+2025-08-09T12:19:58.222450761Z loader.py           :127  2025-08-09 12:19:58,222 Successfully loaded faiss with AVX2 support.
+2025-08-09T12:19:58.226865045Z __init__.py         :174  2025-08-09 12:19:58,226 Failed to load GPU Faiss: name 'GpuIndexIVFFlat' is not defined. Will not load constructor refs for GPU indexes. This is only an error if you're trying to use GPU Faiss.
+2025-08-09T12:19:58.384782784Z /usr/local/lib/python3.10/dist-packages/pyworld/__init__.py:13: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+2025-08-09T12:19:58.384823930Z   import pkg_resources
+2025-08-09T12:20:01.815704025Z handler.py          :438  2025-08-09 12:20:01,815 컨테이너 시작 시 모델 미리 로드 중...
+2025-08-09T12:20:01.815761133Z handler.py          :66   2025-08-09 12:20:01,815 AICoverGenHandler 인스턴스를 초기화하고 모델을 로드합니다...
+2025-08-09T12:20:01.969268344Z handler.py          :78   2025-08-09 12:20:01,968 Using device: cuda
+2025-08-09T12:20:01.970786272Z handler.py          :82   2025-08-09 12:20:01,970 Available voice models: ['.ipynb_checkpoints', 'Jungkook']
+2025-08-09T12:20:01.970802934Z handler.py          :68   2025-08-09 12:20:01,970 AICoverGenHandler 초기화 완료
+2025-08-09T12:20:01.970806320Z handler.py          :440  2025-08-09 12:20:01,970 Cold start 최적화 완료
+2025-08-09T12:20:01.970826238Z --- Starting Serverless Worker |  Version 1.7.13 ---
+2025-08-09T12:20:02.220283230Z {"requestId": null, "message": "Jobs in queue: 1", "level": "INFO"}
+2025-08-09T12:20:02.220320029Z {"requestId": null, "message": "Jobs in progress: 1", "level": "INFO"}
+2025-08-09T12:20:02.220337592Z {"requestId": "sync-27d843fc-3725-4072-9fdc-e7365861101c-e1", "message": "Started.", "level": "INFO"}
+2025-08-09T12:20:02.220643308Z handler.py          :404  2025-08-09 12:20:02,220 작업 입력: {'operation': 'health_check'}
+2025-08-09T12:20:02.220665830Z handler.py          :409  2025-08-09 12:20:02,220 Processing operation: health_check
+2025-08-09T12:20:02.458122139Z {"requestId": "sync-27d843fc-3725-4072-9fdc-e7365861101c-e1", "message": "Finished.", "level": "INFO"}
+2025-08-09T12:20:03.415591100Z {"requestId": null, "message": "Jobs in queue: 1", "level": "INFO"}
+2025-08-09T12:20:03.415621697Z {"requestId": null, "message": "Jobs in progress: 1", "level": "INFO"}
+2025-08-09T12:20:03.415625163Z {"requestId": "sync-4123df4c-5cd4-4ddd-9262-02f99a7822e7-e2", "message": "Started.", "level": "INFO"}
+2025-08-09T12:20:03.415677472Z handler.py          :404  2025-08-09 12:20:03,415 작업 입력: {'operation': 'list_models'}
+2025-08-09T12:20:03.415682371Z handler.py          :409  2025-08-09 12:20:03,415 Processing operation: list_models
+2025-08-09T12:20:03.613359586Z {"requestId": "sync-4123df4c-5cd4-4ddd-9262-02f99a7822e7-e2", "message": "Finished.", "level": "INFO"}

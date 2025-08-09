@@ -41,7 +41,7 @@ COPY . /workspace/
 RUN pip install numpy==1.24.3 scipy librosa soundfile
 RUN pip install ffmpeg-python praat-parselmouth pedalboard pydub pyworld sox
 RUN pip install faiss-cpu onnxruntime-gpu
-RUN pip install gradio tqdm requests lib
+RUN pip install gradio tqdm requests lib tensorboardX
 RUN pip install yt_dlp
 RUN pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 RUN pip install torchcrepe

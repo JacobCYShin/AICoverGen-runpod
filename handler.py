@@ -14,6 +14,7 @@ import torch
 import numpy as np
 import gc
 import hashlib
+import requests
 
 # AICoverGen imports
 import sys
@@ -27,7 +28,7 @@ try:
     from rvc import Config, load_hubert, get_vc, rvc_infer
     from webui import get_current_models, rvc_models_dir, mdxnet_models_dir, output_dir
 except ImportError as e:
-    logger.error(f"AICoverGen 모듈 import 실패: {e}")
+    print(f"AICoverGen 모듈 import 실패: {e}")
     raise
 
 # Override paths for RunPod Serverless
@@ -43,7 +44,7 @@ try:
     import soundfile as sf
     import sox
 except ImportError as e:
-    logger.error(f"Audio processing 모듈 import 실패: {e}")
+    print(f"Audio processing 모듈 import 실패: {e}")
     raise
 
 # 로깅 설정
@@ -57,6 +58,30 @@ os.makedirs(RUNPOD_OUTPUT_DIR, exist_ok=True)
 
 # 전역 변수로 AICoverGenHandler 인스턴스 저장 (Cold start 최적화)
 aicovergen_handler = None
+
+def discover_voice_models(models_root: str) -> list:
+    """Discover valid voice model directories that contain at least one .pth file.
+    Hidden items and non-directories are ignored.
+    """
+    if not os.path.isdir(models_root):
+        return []
+    discovered = []
+    try:
+        for name in os.listdir(models_root):
+            if name.startswith('.'):
+                continue
+            full_path = os.path.join(models_root, name)
+            if not os.path.isdir(full_path):
+                continue
+            try:
+                if any(fname.endswith('.pth') for fname in os.listdir(full_path)):
+                    discovered.append(name)
+            except Exception:
+                continue
+    except Exception as e:
+        logger.warning(f"모델 디렉터리 스캔 중 경고: {e}")
+    return discovered
+
 
 def load_aicovergen_handler():
     """AICoverGenHandler 인스턴스를 로드하고 모델을 준비합니다."""
@@ -77,8 +102,8 @@ class AICoverGenHandler:
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info(f"Using device: {self.device}")
         
-        # Load available models from RunPod volume
-        self.voice_models = get_current_models(RUNPOD_RVC_MODELS_DIR)
+        # Load available models from RunPod volume (filtered)
+        self.voice_models = discover_voice_models(RUNPOD_RVC_MODELS_DIR)
         logger.info(f"Available voice models: {self.voice_models}")
         
         # Set torch to use memory efficiently for serverless
@@ -219,7 +244,7 @@ class AICoverGenHandler:
         if max_val > 0.95:
             final_mix = final_mix * (0.95 / max_val)
         
-        # Save the final mix
+        # Save the final mix (always write WAV here)
         sf.write(output_path, final_mix, 22050)
         
         logger.info(f"[+] Simple mixing completed: {output_path}")
@@ -234,9 +259,9 @@ class AICoverGenHandler:
         return main_pitch_shift(audio_path, pitch_change)
     
     def generate_cover_from_separate_audio(self, 
-                                         voice_audio: str,  # base64 encoded voice audio
-                                         instrument_audio: str,  # base64 encoded instrument audio
-                                         voice_model: str,
+                                         voice_audio: Optional[str] = None,  # base64 encoded voice audio
+                                         instrument_audio: Optional[str] = None,  # base64 encoded instrument audio
+                                         voice_model: str = '',
                                          pitch_adjust: int = 0,
                                          index_rate: float = 0.5,
                                          filter_radius: int = 3,
@@ -253,6 +278,8 @@ class AICoverGenHandler:
                                          backup_gain: int = 0,
                                          inst_gain: int = 0,
                                          output_format: str = "mp3",
+                                         voice_audio_url: Optional[str] = None,
+                                         instrument_audio_url: Optional[str] = None,
                                          **kwargs) -> Dict[str, Any]:
         """
         Generate AI cover from separate voice and instrument audio files
@@ -277,6 +304,8 @@ class AICoverGenHandler:
             backup_gain: Volume change for backup vocals
             inst_gain: Volume change for instrumentals
             output_format: Output format of audio file
+            voice_audio_url: URL for voice audio (alternative to base64)
+            instrument_audio_url: URL for instrument audio (alternative to base64)
             
         Returns:
             Dict containing the generated audio file (base64) and metadata
@@ -288,26 +317,54 @@ class AICoverGenHandler:
                     "error": f"Voice model '{voice_model}' not found. Available models: {self.voice_models}"
                 }
             
-            # Decode base64 audio files
-            try:
-                voice_data = base64.b64decode(voice_audio)
-                instrument_data = base64.b64decode(instrument_audio)
-            except Exception as e:
-                return {"error": f"Invalid base64 audio data: {str(e)}"}
-            
             # Create temporary directory for processing
             with tempfile.TemporaryDirectory() as temp_dir:
-                # Save audio files to temporary directory
+                # Prepare file paths
                 voice_path = os.path.join(temp_dir, "voice_input.wav")
                 instrument_path = os.path.join(temp_dir, "instrument_input.wav")
+
+                # Prefer URL inputs when provided to avoid large base64 payloads
+                def download_to_file(url: str, dst: str):
+                    r = requests.get(url, stream=True, timeout=120)
+                    r.raise_for_status()
+                    with open(dst, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=8192):
+                            if chunk:
+                                f.write(chunk)
+
+                if voice_audio_url:
+                    logger.info("[~] Downloading voice audio from URL...")
+                    download_to_file(voice_audio_url, voice_path)
+                elif voice_audio:
+                    try:
+                        voice_data = base64.b64decode(voice_audio)
+                        with open(voice_path, 'wb') as f:
+                            f.write(voice_data)
+                    except Exception as e:
+                        return {"error": f"Invalid base64 voice audio data: {str(e)}"}
+                else:
+                    return {"error": "Missing voice audio. Provide 'voice_audio' (base64) or 'voice_audio_url'."}
+
+                if instrument_audio_url:
+                    logger.info("[~] Downloading instrument audio from URL...")
+                    download_to_file(instrument_audio_url, instrument_path)
+                elif instrument_audio:
+                    try:
+                        instrument_data = base64.b64decode(instrument_audio)
+                        with open(instrument_path, 'wb') as f:
+                            f.write(instrument_data)
+                    except Exception as e:
+                        return {"error": f"Invalid base64 instrument audio data: {str(e)}"}
+                else:
+                    return {"error": "Missing instrument audio. Provide 'instrument_audio' (base64) or 'instrument_audio_url'."}
                 
-                with open(voice_path, 'wb') as f:
-                    f.write(voice_data)
-                with open(instrument_path, 'wb') as f:
-                    f.write(instrument_data)
-                
-                # Generate unique song ID
-                song_id = hashlib.blake2b(voice_data + instrument_data, digest_size=6).hexdigest()
+                # Generate unique song ID from file contents
+                hasher = hashlib.blake2b(digest_size=6)
+                for p in [voice_path, instrument_path]:
+                    with open(p, 'rb') as fh:
+                        for chunk in iter(lambda: fh.read(8192), b''):
+                            hasher.update(chunk)
+                song_id = hasher.hexdigest()
                 song_dir = os.path.join(temp_dir, song_id)
                 os.makedirs(song_dir, exist_ok=True)
                 
@@ -317,13 +374,13 @@ class AICoverGenHandler:
                 
                 logger.info('[~] Converting voice using RVC...')
                 self.voice_change(voice_model, voice_path, ai_vocals_path, pitch_change, 
-                                f0_method, index_rate, filter_radius, rms_mix_rate, 
-                                protect, crepe_hop_length)
+                                  f0_method, index_rate, filter_radius, rms_mix_rate, 
+                                  protect, crepe_hop_length)
                 
                 # Apply audio effects to vocals (main.py 294-295 lines equivalent)
                 logger.info('[~] Applying audio effects to Vocals...')
                 ai_vocals_mixed_path = self.add_audio_effects(ai_vocals_path, reverb_rm_size, 
-                                                            reverb_wet, reverb_dry, reverb_damping)
+                                                              reverb_wet, reverb_dry, reverb_damping)
                 
                 # Apply overall pitch change if needed (main.py 297-300 lines equivalent)
                 if pitch_change_all != 0:
@@ -336,12 +393,21 @@ class AICoverGenHandler:
                 
                 # Combine AI vocals and instrumentals (main.py 302-303 lines equivalent)
                 logger.info('[~] Combining AI Vocals and Instrumentals...')
-                ai_cover_path = os.path.join(song_dir, f'cover_{voice_model}.{output_format}')
+                ai_cover_path_wav = os.path.join(song_dir, f'cover_{voice_model}.wav')
                 self.combine_audio([ai_vocals_mixed_path, backup_vocals_path, instrument_path], 
-                                 ai_cover_path, main_gain, backup_gain, inst_gain, output_format)
+                                   ai_cover_path_wav, main_gain, backup_gain, inst_gain, output_format)
+                
+                # Convert to MP3 if requested
+                if (output_format or '').lower() == 'mp3':
+                    logger.info('[~] Converting WAV to MP3...')
+                    final_output_path = os.path.join(song_dir, f'cover_{voice_model}.mp3')
+                    audio_seg = AudioSegment.from_wav(ai_cover_path_wav)
+                    audio_seg.export(final_output_path, format='mp3')
+                else:
+                    final_output_path = ai_cover_path_wav
                 
                 # Read the final output file
-                with open(ai_cover_path, 'rb') as f:
+                with open(final_output_path, 'rb') as f:
                     audio_bytes = f.read()
                     audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
                 
@@ -353,7 +419,7 @@ class AICoverGenHandler:
                 return {
                     "success": True,
                     "output_audio": audio_b64,
-                    "filename": f"cover_{voice_model}.{output_format}",
+                    "filename": os.path.basename(final_output_path),
                     "size": len(audio_bytes),
                     "model_used": voice_model,
                     "parameters": {
@@ -371,7 +437,7 @@ class AICoverGenHandler:
                         "main_gain": main_gain,
                         "backup_gain": backup_gain,
                         "inst_gain": inst_gain,
-                        "output_format": output_format
+                        "output_format": (output_format or 'wav')
                     }
                 }
                         
