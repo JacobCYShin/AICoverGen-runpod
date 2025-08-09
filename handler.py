@@ -31,6 +31,9 @@ except ImportError as e:
     print(f"AICoverGen 모듈 import 실패: {e}")
     raise
 
+# Import main module to override its paths at runtime
+import main as main_module
+
 # Override paths for RunPod Serverless
 RUNPOD_RVC_MODELS_DIR = "/runpod-volume/rvc_models"
 RUNPOD_MDXNET_MODELS_DIR = "/runpod-volume/mdxnet_models"
@@ -55,6 +58,21 @@ logger = logging.getLogger(__name__)
 os.makedirs(RUNPOD_RVC_MODELS_DIR, exist_ok=True)
 os.makedirs(RUNPOD_MDXNET_MODELS_DIR, exist_ok=True)
 os.makedirs(RUNPOD_OUTPUT_DIR, exist_ok=True)
+
+# Ensure base model files exist in volume (copy from image workspace if needed)
+def ensure_base_models_in_volume():
+    try:
+        src_dir = rvc_models_dir  # from webui.py → typically /workspace/rvc_models
+        for fname in ["hubert_base.pt", "rmvpe.pt"]:
+            src_path = os.path.join(src_dir, fname)
+            dst_path = os.path.join(RUNPOD_RVC_MODELS_DIR, fname)
+            if not os.path.exists(dst_path) and os.path.exists(src_path):
+                shutil.copy2(src_path, dst_path)
+                logger.info(f"Copied base model to volume: {fname}")
+    except Exception as e:
+        logger.warning(f"기본 모델 파일 복사 중 경고: {e}")
+
+ensure_base_models_in_volume()
 
 # 전역 변수로 AICoverGenHandler 인스턴스 저장 (Cold start 최적화)
 aicovergen_handler = None
@@ -149,10 +167,12 @@ class AICoverGenHandler:
                     filter_radius: int, rms_mix_rate: float, protect: float, 
                     crepe_hop_length: int):
         """Convert voice using RVC - using main.py logic"""
-        from main import voice_change as main_voice_change
-        main_voice_change(voice_model, vocals_path, output_path, pitch_change, 
-                         f0_method, index_rate, filter_radius, rms_mix_rate, 
-                         protect, crepe_hop_length, is_webui=False)
+        # Override main.py's model directory to point to RunPod volume
+        main_module.rvc_models_dir = RUNPOD_RVC_MODELS_DIR
+        # Call main.py's voice_change
+        main_module.voice_change(voice_model, vocals_path, output_path, pitch_change, 
+                                 f0_method, index_rate, filter_radius, rms_mix_rate, 
+                                 protect, crepe_hop_length, is_webui=False)
     
     def add_audio_effects(self, audio_path: str, reverb_rm_size: float, 
                          reverb_wet: float, reverb_dry: float, reverb_damping: float) -> str:
@@ -255,8 +275,7 @@ class AICoverGenHandler:
     
     def pitch_shift(self, audio_path: str, pitch_change: int) -> str:
         """Apply pitch shift to audio - using main.py logic"""
-        from main import pitch_shift as main_pitch_shift
-        return main_pitch_shift(audio_path, pitch_change)
+        return main_module.pitch_shift(audio_path, pitch_change)
     
     def generate_cover_from_separate_audio(self, 
                                          voice_audio: Optional[str] = None,  # base64 encoded voice audio

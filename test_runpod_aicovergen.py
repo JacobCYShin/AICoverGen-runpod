@@ -53,6 +53,18 @@ def parse_arguments():
     )
     
     parser.add_argument(
+        "--voice-url",
+        default=None,
+        help="보컬 오디오의 공개 URL(제공 시 base64 대신 사용)"
+    )
+    
+    parser.add_argument(
+        "--instrument-url",
+        default=None,
+        help="악기 오디오의 공개 URL(제공 시 base64 대신 사용)"
+    )
+    
+    parser.add_argument(
         "--voice-model", "-m",
         default="Jungkook",
         help="사용할 보이스 모델명 (기본값: Jungkook)"
@@ -94,6 +106,8 @@ API_KEY = None
 ENDPOINT_ID = None
 VOICE_AUDIO_PATH = None
 INSTRUMENT_AUDIO_PATH = None
+VOICE_URL = None
+INSTRUMENT_URL = None
 VOICE_MODEL = None
 PITCH_ADJUST = None
 OUTPUT_FORMAT = None
@@ -237,28 +251,58 @@ def test_list_models():
 def test_generate_cover():
     """AI 커버 생성 테스트"""
 
-    # 0. 옵션에 따라 파일 트리밍
-    voice_path = VOICE_AUDIO_PATH
-    inst_path = INSTRUMENT_AUDIO_PATH
-    if TRIM_SECONDS and TRIM_SECONDS > 0:
-        print(f"✂️ 전송 전 트리밍 적용: 앞부분 {TRIM_SECONDS}초")
-        voice_path = maybe_trim_audio(voice_path, TRIM_SECONDS)
-        inst_path = maybe_trim_audio(inst_path, TRIM_SECONDS)
+    params = {
+        "voice_model": VOICE_MODEL,
+        "pitch_adjust": PITCH_ADJUST,
+        "index_rate": 0.5,
+        "filter_radius": 3,
+        "rms_mix_rate": 0.25,
+        "protect": 0.33,
+        "f0_method": "rmvpe",
+        "reverb_rm_size": 0.25,
+        "reverb_wet": 0.4,
+        "reverb_dry": 0.6,
+        "reverb_damping": 0.5,
+        "main_gain": 0,
+        "backup_gain": 0,
+        "inst_gain": 0,
+        "output_format": OUTPUT_FORMAT,
+    }
 
-    # 1. 입력 오디오 → base64 인코딩
-    print("🎵 오디오 파일 인코딩 중...")
-    try:
-        voice_audio = encode_audio_to_base64(voice_path)
-        instrument_audio = encode_audio_to_base64(inst_path)
-        print(f"✅ 인코딩 완료")
-        print(f"   - 보컬 파일 크기: {len(voice_audio)} chars")
-        print(f"   - 악기 파일 크기: {len(instrument_audio)} chars")
-    except FileNotFoundError as e:
-        print(f"❌ 파일을 찾을 수 없습니다: {e}")
-        return
+    use_urls = bool(VOICE_URL) and bool(INSTRUMENT_URL)
+
+    if use_urls:
+        print("🌐 URL 방식으로 전송합니다 (payload를 작게 유지)")
+        params.update({
+            "voice_audio_url": VOICE_URL,
+            "instrument_audio_url": INSTRUMENT_URL,
+        })
+    else:
+        # 0. 옵션에 따라 파일 트리밍
+        voice_path = VOICE_AUDIO_PATH
+        inst_path = INSTRUMENT_AUDIO_PATH
+        if TRIM_SECONDS and TRIM_SECONDS > 0:
+            print(f"✂️ 전송 전 트리밍 적용: 앞부분 {TRIM_SECONDS}초")
+            voice_path = maybe_trim_audio(voice_path, TRIM_SECONDS)
+            inst_path = maybe_trim_audio(inst_path, TRIM_SECONDS)
+
+        # 1. 입력 오디오 → base64 인코딩
+        print("🎵 오디오 파일 인코딩 중...")
+        try:
+            voice_audio = encode_audio_to_base64(voice_path)
+            instrument_audio = encode_audio_to_base64(inst_path)
+            print(f"✅ 인코딩 완료")
+            print(f"   - 보컬 파일 크기: {len(voice_audio)} chars")
+            print(f"   - 악기 파일 크기: {len(instrument_audio)} chars")
+        except FileNotFoundError as e:
+            print(f"❌ 파일을 찾을 수 없습니다: {e}")
+            return
+        params.update({
+            "voice_audio": voice_audio,
+            "instrument_audio": instrument_audio,
+        })
 
     # 2. API 요청 구성
-    # ENDPOINT_ID가 전체 URL인지 확인
     if ENDPOINT_ID.startswith("http"):
         url = ENDPOINT_ID.replace("/run", "/runsync")
     else:
@@ -271,25 +315,7 @@ def test_generate_cover():
     payload = {
         "input": {
             "operation": "generate_cover_from_separate_audio",
-            "params": {
-                "voice_audio": voice_audio,
-                "instrument_audio": instrument_audio,
-                "voice_model": VOICE_MODEL,
-                "pitch_adjust": PITCH_ADJUST,
-                "index_rate": 0.5,
-                "filter_radius": 3,
-                "rms_mix_rate": 0.25,
-                "protect": 0.33,
-                "f0_method": "rmvpe",
-                "reverb_rm_size": 0.25,
-                "reverb_wet": 0.4,
-                "reverb_dry": 0.6,
-                "reverb_damping": 0.5,
-                "main_gain": 0,
-                "backup_gain": 0,
-                "inst_gain": 0,
-                "output_format": OUTPUT_FORMAT
-            }
+            "params": params
         }
     }
 
@@ -299,11 +325,15 @@ def test_generate_cover():
     print(f"   - 보이스 모델: {VOICE_MODEL}")
     print(f"   - 피치 조정: {PITCH_ADJUST}")
     print(f"   - 출력 포맷: {OUTPUT_FORMAT}")
+    if use_urls:
+        print(f"   - 입력: URL 방식")
+    else:
+        print(f"   - 입력: base64 방식 (payload 큼)")
 
     start_time = time.time()
 
     try:
-        response = requests.post(url, headers=headers, json=payload, timeout=300)  # 5분 타임아웃
+        response = requests.post(url, headers=headers, json=payload, timeout=300)
 
         if response.status_code != 200:
             print(f"❌ 요청 실패: {response.status_code}")
@@ -407,6 +437,8 @@ if __name__ == "__main__":
     ENDPOINT_ID = args.endpoint_id
     VOICE_AUDIO_PATH = args.voice_audio
     INSTRUMENT_AUDIO_PATH = args.instrument_audio
+    VOICE_URL = args.voice_url
+    INSTRUMENT_URL = args.instrument_url
     VOICE_MODEL = args.voice_model
     PITCH_ADJUST = args.pitch_adjust
     OUTPUT_FORMAT = args.output_format
@@ -419,10 +451,15 @@ if __name__ == "__main__":
     print(f"   - 보이스 모델: {VOICE_MODEL}")
     print(f"   - 피치 조정: {PITCH_ADJUST}")
     print(f"   - 출력 포맷: {OUTPUT_FORMAT}")
-    print(f"   - 보컬 파일: {VOICE_AUDIO_PATH}")
-    print(f"   - 악기 파일: {INSTRUMENT_AUDIO_PATH}")
-    if TRIM_SECONDS and TRIM_SECONDS > 0:
-        print(f"   - 트리밍: 앞부분 {TRIM_SECONDS}초 전송")
+    if VOICE_URL and INSTRUMENT_URL:
+        print(f"   - 입력: URL 방식")
+        print(f"   - 보컬 URL: {VOICE_URL}")
+        print(f"   - 악기 URL: {INSTRUMENT_URL}")
+    else:
+        print(f"   - 보컬 파일: {VOICE_AUDIO_PATH}")
+        print(f"   - 악기 파일: {INSTRUMENT_AUDIO_PATH}")
+        if TRIM_SECONDS and TRIM_SECONDS > 0:
+            print(f"   - 트리밍: 앞부분 {TRIM_SECONDS}초 전송")
     print("="*60)
 
     # 1. 헬스체크
