@@ -224,6 +224,60 @@ class AICoverGenHandler:
             "count": len(self.voice_models)
         }
     
+    def check_model_files(self) -> Dict[str, Any]:
+        """Check the status of model files"""
+        try:
+            model_status = {}
+            
+            # Check RVC base models
+            rvc_base_models = ["hubert_base.pt", "rmvpe.pt"]
+            for model in rvc_base_models:
+                model_path = os.path.join(RUNPOD_RVC_MODELS_DIR, model)
+                if os.path.exists(model_path):
+                    file_size = os.path.getsize(model_path) / (1024 * 1024)  # MB
+                    model_status[model] = {
+                        "exists": True,
+                        "size_mb": round(file_size, 2),
+                        "path": model_path
+                    }
+                else:
+                    model_status[model] = {
+                        "exists": False,
+                        "size_mb": 0,
+                        "path": model_path
+                    }
+            
+            # Check voice models
+            voice_model_status = {}
+            for voice_model in self.voice_models:
+                model_dir = os.path.join(RUNPOD_RVC_MODELS_DIR, voice_model)
+                if os.path.exists(model_dir):
+                    files = os.listdir(model_dir)
+                    voice_model_status[voice_model] = {
+                        "exists": True,
+                        "files": files,
+                        "path": model_dir
+                    }
+                else:
+                    voice_model_status[voice_model] = {
+                        "exists": False,
+                        "files": [],
+                        "path": model_dir
+                    }
+            
+            return {
+                "rvc_base_models": model_status,
+                "voice_models": voice_model_status,
+                "runpod_volume_exists": os.path.exists("/runpod-volume"),
+                "runpod_rvc_models_dir": RUNPOD_RVC_MODELS_DIR
+            }
+        except Exception as e:
+            logger.error(f"모델 파일 상태 확인 중 오류: {str(e)}")
+            return {
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
+    
     def get_rvc_model(self, voice_model: str) -> tuple:
         """Get RVC model paths"""
         rvc_model_filename, rvc_index_filename = None, None
@@ -580,6 +634,8 @@ def handler(job):
             return handler_instance.health_check()
         elif operation == "list_models":
             return handler_instance.list_models()
+        elif operation == "check_model_files":
+            return handler_instance.check_model_files()
         elif operation == "generate_cover_from_separate_audio":
             # Extract parameters for cover generation from separate audio files
             params = job_input.get("params", {})
