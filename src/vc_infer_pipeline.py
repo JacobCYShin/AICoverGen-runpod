@@ -323,8 +323,12 @@ class VC(object):
             if hasattr(self, "model_rmvpe") == False:
                 from rmvpe import RMVPE
 
+                # Use environment variable if available, otherwise fall back to BASE_DIR
+                rvc_models_dir = os.environ.get('RVC_MODELS_DIR', os.path.join(BASE_DIR, 'rvc_models'))
+                rmvpe_path = os.path.join(rvc_models_dir, 'rmvpe.pt')
+                
                 self.model_rmvpe = RMVPE(
-                    os.path.join(BASE_DIR, 'rvc_models', 'rmvpe.pt'), is_half=self.is_half, device=self.device
+                    rmvpe_path, is_half=self.is_half, device=self.device
                 )
             f0 = self.model_rmvpe.infer_from_audio(x, thred=0.03)
 

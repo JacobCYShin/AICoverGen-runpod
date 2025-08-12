@@ -311,6 +311,18 @@ class AICoverGenHandler:
         webui.mdxnet_models_dir = RUNPOD_MDXNET_MODELS_DIR
         webui.output_dir = RUNPOD_OUTPUT_DIR
         
+        # Set environment variables for other modules that use BASE_DIR
+        os.environ['RVC_MODELS_DIR'] = RUNPOD_RVC_MODELS_DIR
+        os.environ['MDXNET_MODELS_DIR'] = RUNPOD_MDXNET_MODELS_DIR
+        os.environ['OUTPUT_DIR'] = RUNPOD_OUTPUT_DIR
+        
+        # Override BASE_DIR for modules that use it
+        import sys
+        if 'src' in sys.modules:
+            src_module = sys.modules['src']
+            if hasattr(src_module, 'BASE_DIR'):
+                src_module.BASE_DIR = RUNPOD_RVC_MODELS_DIR
+        
         # Call main.py's voice_change
         main_module.voice_change(voice_model, vocals_path, output_path, pitch_change, 
                                  f0_method, index_rate, filter_radius, rms_mix_rate, 
