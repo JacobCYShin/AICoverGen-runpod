@@ -1,4 +1,4 @@
-# RunPod Serverless용 Audio Separator Dockerfile
+# RunPod Serverless용 AICoverGen Dockerfile
 FROM runpod/base:0.6.2-cuda12.1.0
 
 # 시스템 패키지 업데이트 및 설치
@@ -31,6 +31,9 @@ RUN ln -sf /usr/bin/python3 /usr/bin/python
 # Python 경로 확인
 RUN which python3 && python3 --version
 
+# CUDA 12 호환 ONNX Runtime 설치
+RUN pip install onnxruntime-gpu --extra-index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/onnxruntime-cuda-12/pypi/simple/
+
 # 작업 디렉토리 설정
 WORKDIR /workspace
 
@@ -56,6 +59,16 @@ RUN mkdir -p /runpod-volume/output
 
 # RVC 기본 모델 다운로드
 RUN python3 download_base_models.py
+
+# 런포드/앱 환경 변수 기본값
+ENV RP_HANDLER_TIMEOUT=900 \
+    RP_UPLOAD_ENABLE=true \
+    RP_VERBOSE=true \
+    PRELOAD_MODELS=false \
+    OUTPUT_DIR=/runpod-volume/output/
+
+# 헬스체크 (서버가 시작되었는지 간단 확인)
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD pgrep -f "handler.py" || exit 1
 
 # 포트 노출
 EXPOSE 8000

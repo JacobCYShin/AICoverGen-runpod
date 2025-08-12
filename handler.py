@@ -54,6 +54,12 @@ except ImportError as e:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# RunPod 업로드 유틸리티 (URL 반환용)
+try:
+    from runpod.serverless.utils import rp_upload
+except Exception:  # 로컬 환경 대비
+    rp_upload = None
+
 # Ensure directories exist
 os.makedirs(RUNPOD_RVC_MODELS_DIR, exist_ok=True)
 os.makedirs(RUNPOD_MDXNET_MODELS_DIR, exist_ok=True)
@@ -73,6 +79,57 @@ def ensure_base_models_in_volume():
         logger.warning(f"기본 모델 파일 복사 중 경고: {e}")
 
 ensure_base_models_in_volume()
+
+def _encode_outputs_as_base64(file_paths: list[str]) -> Dict[str, str]:
+    """출력 파일을 base64로 인코딩하여 반환합니다."""
+    result_files: Dict[str, str] = {}
+    for output_file in file_paths:
+        if os.path.exists(output_file):
+            try:
+                with open(output_file, "rb") as f:
+                    file_data = f.read()
+                    file_name = os.path.basename(output_file)
+                    
+                    # 파일 크기 확인 및 압축 고려
+                    file_size = len(file_data)
+                    logger.info(f"파일 크기: {file_name} = {file_size} bytes ({file_size / 1024 / 1024:.2f} MB)")
+                    
+                    # 파일이 너무 크면 경고
+                    if file_size > 50 * 1024 * 1024:  # 50MB
+                        logger.warning(f"파일이 너무 큽니다: {file_name} ({file_size / 1024 / 1024:.2f} MB)")
+                        # 파일을 건너뛰고 경고만 반환
+                        result_files[f"{file_name}_SKIPPED"] = "File too large"
+                        continue
+                    
+                    result_files[file_name] = base64.b64encode(file_data).decode('utf-8')
+                    logger.info(f"파일 인코딩 완료: {file_name}")
+            except Exception as e:
+                logger.error(f"파일 인코딩 실패: {output_file} - {e}")
+                result_files[f"{os.path.basename(output_file)}_ERROR"] = str(e)
+        else:
+            logger.warning(f"파일이 존재하지 않습니다: {output_file}")
+    return result_files
+
+def _upload_outputs_and_get_urls(file_paths: list[str]) -> Dict[str, str]:
+    """출력 파일을 업로드하고 공개 URL을 반환합니다."""
+    if rp_upload is None:
+        raise RuntimeError("rp_upload 모듈을 사용할 수 없습니다. 런포드 서버리스 환경에서 실행해 주세요.")
+
+    uploaded_files: Dict[str, str] = {}
+    for output_file in file_paths:
+        if os.path.exists(output_file):
+            try:
+                upload_result = rp_upload.upload_file(output_file)
+                # upload_result 예: { 'file_id': str, 'url'|'link': str }
+                url_value = upload_result.get('url') or upload_result.get('link')
+                uploaded_files[os.path.basename(output_file)] = url_value
+                logger.info(f"업로드 완료: {output_file} -> {url_value}")
+            except Exception as e:
+                logger.error(f"파일 업로드 실패: {output_file} - {e}")
+                raise
+        else:
+            logger.warning(f"파일이 존재하지 않습니다: {output_file}")
+    return uploaded_files
 
 # 전역 변수로 AICoverGenHandler 인스턴스 저장 (Cold start 최적화)
 aicovergen_handler = None
@@ -504,7 +561,31 @@ def handler(job):
         elif operation == "generate_cover_from_separate_audio":
             # Extract parameters for cover generation from separate audio files
             params = job_input.get("params", {})
-            return handler_instance.generate_cover_from_separate_audio(**params)
+            return_type = params.get("return_type", "base64")  # 'url' | 'base64'
+            
+            result = handler_instance.generate_cover_from_separate_audio(**params)
+            
+            # return_type에 따라 결과 처리
+            if return_type == "url" and "output_audio" in result:
+                # base64를 임시 파일로 저장하고 업로드
+                with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp_file:
+                    audio_data = base64.b64decode(result["output_audio"])
+                    tmp_file.write(audio_data)
+                    tmp_file_path = tmp_file.name
+                
+                try:
+                    uploaded_urls = _upload_outputs_and_get_urls([tmp_file_path])
+                    result["output_urls"] = uploaded_urls
+                    result["return_type"] = "url"
+                    # base64 데이터 제거 (URL로 대체)
+                    if "output_audio" in result:
+                        del result["output_audio"]
+                finally:
+                    # 임시 파일 정리
+                    if os.path.exists(tmp_file_path):
+                        os.unlink(tmp_file_path)
+            
+            return result
         else:
             return {
                 "error": f"Unknown operation: {operation}. Available operations: health_check, list_models, generate_cover_from_separate_audio"
