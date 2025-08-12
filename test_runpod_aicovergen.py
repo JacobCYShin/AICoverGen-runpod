@@ -33,6 +33,10 @@ class AICoverGenRunPodClient:
               - 또는 기존 형식: https://api.runpod.ai/v2/<ENDPOINT_ID>/run, /runsync 중 하나
             api_key: RunPod API 키 (선택사항)
         """
+        # 엔드포인트 ID만 전달된 경우 전체 URL로 변환
+        if not api_url.startswith("http"):
+            api_url = f"https://api.runpod.ai/v2/{api_url}"
+        
         base = api_url.rstrip("/")
         if base.endswith("/run") or base.endswith("/runsync") or base.endswith("/status"):
             # 기존 형식에서 엔드포인트 베이스로 환원

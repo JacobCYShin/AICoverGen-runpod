@@ -57,8 +57,13 @@ RUN mkdir -p /runpod-volume/rvc_models
 RUN mkdir -p /runpod-volume/mdxnet_models
 RUN mkdir -p /runpod-volume/output
 
-# RVC 기본 모델 다운로드
-RUN python3 download_base_models.py
+# RVC 기본 모델 다운로드 (안정성 개선)
+RUN echo "모델 다운로드 시작..." && \
+    python3 download_base_models.py && \
+    echo "모델 다운로드 완료" && \
+    echo "다운로드된 파일 확인:" && \
+    ls -la /runpod-volume/rvc_models/ && \
+    ls -la /runpod-volume/mdxnet_models/
 
 # 런포드/앱 환경 변수 기본값
 ENV RP_HANDLER_TIMEOUT=900 \

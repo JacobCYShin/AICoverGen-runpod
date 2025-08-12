@@ -65,20 +65,42 @@ os.makedirs(RUNPOD_RVC_MODELS_DIR, exist_ok=True)
 os.makedirs(RUNPOD_MDXNET_MODELS_DIR, exist_ok=True)
 os.makedirs(RUNPOD_OUTPUT_DIR, exist_ok=True)
 
-# Ensure base model files exist in volume (copy from image workspace if needed)
-def ensure_base_models_in_volume():
+# Check if base models exist in volume
+def check_base_models_in_volume():
+    """볼륨에 기본 모델 파일들이 존재하는지 확인"""
     try:
-        src_dir = rvc_models_dir  # from webui.py → typically /workspace/rvc_models
-        for fname in ["hubert_base.pt", "rmvpe.pt"]:
-            src_path = os.path.join(src_dir, fname)
-            dst_path = os.path.join(RUNPOD_RVC_MODELS_DIR, fname)
-            if not os.path.exists(dst_path) and os.path.exists(src_path):
-                shutil.copy2(src_path, dst_path)
-                logger.info(f"Copied base model to volume: {fname}")
+        required_models = ["hubert_base.pt", "rmvpe.pt"]
+        missing_models = []
+        
+        for fname in required_models:
+            model_path = os.path.join(RUNPOD_RVC_MODELS_DIR, fname)
+            if os.path.exists(model_path):
+                file_size = os.path.getsize(model_path) / (1024 * 1024)  # MB
+                logger.info(f"기본 모델 확인: {fname} ({file_size:.1f}MB)")
+                
+                # 파일 크기 검증
+                if fname == "hubert_base.pt" and file_size < 80:
+                    logger.warning(f"hubert_base.pt 파일이 너무 작음 ({file_size:.1f}MB)")
+                    missing_models.append(fname)
+                elif fname == "rmvpe.pt" and file_size < 10:
+                    logger.warning(f"rmvpe.pt 파일이 너무 작음 ({file_size:.1f}MB)")
+                    missing_models.append(fname)
+            else:
+                logger.warning(f"기본 모델 파일이 없음: {model_path}")
+                missing_models.append(fname)
+        
+        if missing_models:
+            logger.warning(f"누락된 기본 모델: {missing_models}")
+            return False
+        else:
+            logger.info("모든 기본 모델이 정상적으로 존재함")
+            return True
+            
     except Exception as e:
-        logger.warning(f"기본 모델 파일 복사 중 경고: {e}")
+        logger.warning(f"기본 모델 확인 중 오류: {e}")
+        return False
 
-ensure_base_models_in_volume()
+check_base_models_in_volume()
 
 def _encode_outputs_as_base64(file_paths: list[str]) -> Dict[str, str]:
     """출력 파일을 base64로 인코딩하여 반환합니다."""
