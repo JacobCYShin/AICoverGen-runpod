@@ -300,8 +300,17 @@ class AICoverGenHandler:
                     filter_radius: int, rms_mix_rate: float, protect: float, 
                     crepe_hop_length: int):
         """Convert voice using RVC - using main.py logic"""
-        # Override main.py's model directory to point to RunPod volume
+        # Override all module paths to point to RunPod volume
         main_module.rvc_models_dir = RUNPOD_RVC_MODELS_DIR
+        main_module.mdxnet_models_dir = RUNPOD_MDXNET_MODELS_DIR
+        main_module.output_dir = RUNPOD_OUTPUT_DIR
+        
+        # Also override webui module paths
+        import webui
+        webui.rvc_models_dir = RUNPOD_RVC_MODELS_DIR
+        webui.mdxnet_models_dir = RUNPOD_MDXNET_MODELS_DIR
+        webui.output_dir = RUNPOD_OUTPUT_DIR
+        
         # Call main.py's voice_change
         main_module.voice_change(voice_model, vocals_path, output_path, pitch_change, 
                                  f0_method, index_rate, filter_radius, rms_mix_rate, 
