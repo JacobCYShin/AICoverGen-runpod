@@ -558,7 +558,6 @@ class AICoverGenHandler:
                                          inst_gain: int = 0,
                                          output_format: str = "mp3",
                                          return_type: str = "url",  # 'url' | 'base64', default to 'url'
-                                         save_converted_vocals: bool = False,  # 변환된 보컬 파일 저장 여부
                                          **kwargs) -> Dict[str, Any]:
         """
         Generate AI cover from separate voice and instrument audio files
@@ -586,11 +585,9 @@ class AICoverGenHandler:
             inst_gain: Volume change for instrumentals
             output_format: Output format of audio file
             return_type: 'url' for S3 URL output, 'base64' for base64 output
-            save_converted_vocals: Whether to save and return the converted vocals file
             
         Returns:
             Dict containing the generated audio file (URL or base64) and metadata
-            If save_converted_vocals=True, also includes converted_vocals_url or converted_vocals_audio
         """
         try:
             # Validate voice model
@@ -694,19 +691,6 @@ class AICoverGenHandler:
                 else:
                     final_output_path = ai_cover_path_wav
                 
-                # 변환된 보컬 파일 처리 (요청된 경우)
-                converted_vocals_path = None
-                if save_converted_vocals:
-                    logger.info('[~] Preparing converted vocals for output...')
-                    if (output_format or '').lower() == 'mp3':
-                        # MP3로 변환
-                        converted_vocals_path = os.path.join(song_dir, f'converted_vocals_{voice_model}.mp3')
-                        vocals_seg = AudioSegment.from_wav(ai_vocals_mixed_path)
-                        vocals_seg.export(converted_vocals_path, format='mp3')
-                    else:
-                        # WAV 그대로 사용
-                        converted_vocals_path = ai_vocals_mixed_path
-                
                 # Prepare result based on return_type
                 result = {
                     "success": True,
@@ -745,28 +729,11 @@ class AICoverGenHandler:
                                 audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
                             result["output_audio"] = audio_b64
                             result["return_type"] = "base64"
-                            
-                            # 변환된 보컬도 base64로 처리
-                            if save_converted_vocals and converted_vocals_path:
-                                with open(converted_vocals_path, 'rb') as f:
-                                    vocals_bytes = f.read()
-                                    vocals_b64 = base64.b64encode(vocals_bytes).decode('utf-8')
-                                result["converted_vocals_audio"] = vocals_b64
-                                result["converted_vocals_filename"] = os.path.basename(converted_vocals_path)
-                            
                             logger.info("[+] Base64 encoding completed (S3 fallback)")
                         else:
                             logger.info("[~] Uploading result to S3...")
                             output_url = _upload_to_s3(final_output_path, "audio")
                             result["output_url"] = output_url
-                            
-                            # 변환된 보컬도 S3에 업로드
-                            if save_converted_vocals and converted_vocals_path:
-                                converted_vocals_url = _upload_to_s3(converted_vocals_path, "audio")
-                                result["converted_vocals_url"] = converted_vocals_url
-                                result["converted_vocals_filename"] = os.path.basename(converted_vocals_path)
-                                logger.info(f"[+] Converted vocals uploaded: {converted_vocals_url}")
-                            
                             logger.info(f"[+] S3 upload completed: {output_url}")
                     else:
                         # Return as base64 (fallback)
@@ -775,16 +742,6 @@ class AICoverGenHandler:
                             audio_bytes = f.read()
                             audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
                         result["output_audio"] = audio_b64
-                        
-                        # 변환된 보컬도 base64로 처리
-                        if save_converted_vocals and converted_vocals_path:
-                            with open(converted_vocals_path, 'rb') as f:
-                                vocals_bytes = f.read()
-                                vocals_b64 = base64.b64encode(vocals_bytes).decode('utf-8')
-                            result["converted_vocals_audio"] = vocals_b64
-                            result["converted_vocals_filename"] = os.path.basename(converted_vocals_path)
-                            logger.info("[+] Converted vocals base64 encoding completed")
-                        
                         logger.info("[+] Base64 encoding completed")
                         
                 finally:
