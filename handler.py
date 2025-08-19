@@ -132,14 +132,23 @@ def check_base_models_in_volume():
 
 check_base_models_in_volume()
 
-# S3 설정 상태 로깅
+# S3 설정 상태 로깅 (상세 디버깅)
+logger.info("🔍 환경변수 디버깅:")
+logger.info(f"  AWS_ACCESS_KEY_ID: {'설정됨' if AWS_ACCESS_KEY_ID else '없음'} (길이: {len(AWS_ACCESS_KEY_ID) if AWS_ACCESS_KEY_ID else 0})")
+logger.info(f"  AWS_SECRET_ACCESS_KEY: {'설정됨' if AWS_SECRET_ACCESS_KEY else '없음'} (길이: {len(AWS_SECRET_ACCESS_KEY) if AWS_SECRET_ACCESS_KEY else 0})")
+logger.info(f"  AWS_REGION: {AWS_REGION}")
+logger.info(f"  S3_BUCKET_NAME: {S3_BUCKET_NAME}")
+
 if S3_AVAILABLE:
     logger.info(f"✅ S3 연결 가능: 버킷={S3_BUCKET_NAME}, 리전={AWS_REGION}")
 else:
     logger.warning("⚠️ S3 연결 불가: AWS 자격증명 또는 버킷명이 설정되지 않음. base64 방식만 사용 가능.")
-    logger.warning(f"AWS_ACCESS_KEY_ID: {'설정됨' if AWS_ACCESS_KEY_ID else '없음'}")
-    logger.warning(f"AWS_SECRET_ACCESS_KEY: {'설정됨' if AWS_SECRET_ACCESS_KEY else '없음'}")
-    logger.warning(f"S3_BUCKET_NAME: {S3_BUCKET_NAME if S3_BUCKET_NAME else '없음'}")
+    
+    # 모든 환경변수 출력 (디버깅용)
+    logger.warning("전체 환경변수 목록:")
+    for key, value in os.environ.items():
+        if 'AWS' in key or 'S3' in key:
+            logger.warning(f"  {key}: {'설정됨' if value else '없음'}")
 
 def _download_from_s3(s3_url: str) -> str:
     """S3 URL에서 파일을 다운로드하여 임시 파일 경로를 반환합니다."""
@@ -232,9 +241,9 @@ def _upload_to_s3(file_path: str, file_type: str = "audio") -> str:
         file_name = os.path.basename(file_path)
         
         if file_type == "audio":
-            s3_key = f"aicovergen-output/{timestamp}_{file_name}"
+            s3_key = f"generated-audios/{timestamp}_{file_name}"
         else:
-            s3_key = f"aicovergen-misc/{timestamp}_{file_name}"
+            s3_key = f"generated-images/{timestamp}_{file_name}"
         
         # S3에 업로드
         logger.info(f"S3 업로드 중: {S3_BUCKET_NAME}/{s3_key}")
@@ -369,6 +378,12 @@ class AICoverGenHandler:
             "gpu_available": torch.cuda.is_available(),
             "s3_available": S3_AVAILABLE,
             "s3_bucket": S3_BUCKET_NAME if S3_AVAILABLE else None,
+            "aws_env_debug": {
+                "AWS_ACCESS_KEY_ID": "설정됨" if AWS_ACCESS_KEY_ID else "없음",
+                "AWS_SECRET_ACCESS_KEY": "설정됨" if AWS_SECRET_ACCESS_KEY else "없음", 
+                "AWS_REGION": AWS_REGION,
+                "S3_BUCKET_NAME": S3_BUCKET_NAME
+            },
             "supported_input_types": ["voice_audio_url", "instrument_audio_url"] if S3_AVAILABLE else ["voice_audio", "instrument_audio"],
             "supported_return_types": ["url", "base64"] if S3_AVAILABLE else ["base64"]
         }
@@ -486,102 +501,35 @@ class AICoverGenHandler:
     
     def add_audio_effects(self, audio_path: str, reverb_rm_size: float, 
                          reverb_wet: float, reverb_dry: float, reverb_damping: float) -> str:
-        """Apply simple audio effects to vocals"""
-        import librosa
-        import soundfile as sf
-        import numpy as np
-        from pedalboard import Pedalboard, Reverb, Compressor
-        
-        logger.info(f"[~] Simple audio effects: {audio_path}")
-        
-        # Load audio with lower sample rate for speed
-        y, sr = librosa.load(audio_path, sr=22050)
-        
-        # Simple effects chain
-        board = Pedalboard([
-            # Light compression for vocal clarity
-            Compressor(ratio=3, threshold_db=-20, attack_ms=5, release_ms=50),
-            
-            # Light reverb for space
-            Reverb(room_size=reverb_rm_size, 
-                   dry_level=reverb_dry, 
-                   wet_level=reverb_wet, 
-                   damping=reverb_damping)
-        ])
-        
-        # Apply effects
-        effected = board(y, sr)
-        
-        # Save processed audio
+        """Apply audio effects to vocals - using main.py logic"""
         output_path = f'{os.path.splitext(audio_path)[0]}_mixed.wav'
-        sf.write(output_path, effected, sr)
-        
-        logger.info(f"[+] Simple effects applied: {output_path}")
-        
+
+        # Initialize audio effects plugins - same as main.py
+        board = Pedalboard(
+            [
+                HighpassFilter(),
+                Compressor(ratio=4, threshold_db=-15),
+                Reverb(room_size=reverb_rm_size, dry_level=reverb_dry, wet_level=reverb_wet, damping=reverb_damping)
+             ]
+        )
+
+        with AudioFile(audio_path) as f:
+            with AudioFile(output_path, 'w', f.samplerate, f.num_channels) as o:
+                # Read one second of audio at a time, until the file is empty:
+                while f.tell() < f.frames:
+                    chunk = f.read(int(f.samplerate))
+                    effected = board(chunk, f.samplerate, reset=False)
+                    o.write(effected)
+
         return output_path
     
     def combine_audio(self, audio_paths: list, output_path: str, main_gain: int, 
                      backup_gain: int, inst_gain: int, output_format: str):
-        """Combine AI vocals and instrumentals with simple mixing"""
-        import librosa
-        import soundfile as sf
-        import numpy as np
-        
-        logger.info(f"[~] Simple mixing: {audio_paths}")
-        
-        # Load all audio files
-        audio_signals = []
-        
-        for path in audio_paths:
-            if os.path.exists(path):
-                # Load with lower sample rate for faster processing
-                y, sr = librosa.load(path, sr=22050)
-                audio_signals.append(y)
-            else:
-                logger.warning(f"Warning: {path} not found, using silence")
-                audio_signals.append(np.zeros(22050 * 10))
-        
-        # Ensure all signals have same length
-        max_length = max(len(signal) for signal in audio_signals)
-        padded_signals = []
-        
-        for signal in audio_signals:
-            if len(signal) < max_length:
-                padded = np.pad(signal, (0, max_length - len(signal)), mode='constant')
-            else:
-                padded = signal
-            padded_signals.append(padded)
-        
-        # Apply gain adjustments (convert dB to linear)
-        main_vocals = padded_signals[0] * (10 ** (main_gain / 20))
-        backup_vocals = padded_signals[1] * (10 ** (backup_gain / 20))
-        instrumentals = padded_signals[2] * (10 ** (inst_gain / 20))
-        
-        # Simple mixing without complex processing
-        # 1. Combine vocals with reduced volume
-        vocals_combined = main_vocals * 0.7 + backup_vocals * 0.35  # Main at 70%, backup at 35%
-        
-        # 2. Simple ducking (vocals reduce instrumentals slightly)
-        vocal_envelope = np.abs(vocals_combined)
-        ducking_curve = 1.0 - (np.clip(vocal_envelope * 0.1, 0, 0.1))  # Duck up to 10%
-        instrumentals_ducked = instrumentals * ducking_curve
-        
-        # 3. Final mix with proper levels
-        final_mix = vocals_combined + instrumentals_ducked * 0.9  # Instrumentals at 90%
-        
-        # 4. Simple normalization
-        max_val = np.max(np.abs(final_mix))
-        if max_val > 0.95:
-            final_mix = final_mix * (0.95 / max_val)
-        
-        # Save the final mix (always write WAV here)
-        sf.write(output_path, final_mix, 22050)
-        
-        logger.info(f"[+] Simple mixing completed: {output_path}")
-        logger.info(f"    - Duration: {len(final_mix) / 22050:.2f} seconds")
-        logger.info(f"    - Peak level: {np.max(np.abs(final_mix)):.3f}")
-        
-        return output_path
+        """Combine AI vocals and instrumentals - using main.py logic"""
+        main_vocal_audio = AudioSegment.from_wav(audio_paths[0]) - 4 + main_gain
+        backup_vocal_audio = AudioSegment.from_wav(audio_paths[1]) - 6 + backup_gain
+        instrumental_audio = AudioSegment.from_wav(audio_paths[2]) - 7 + inst_gain
+        main_vocal_audio.overlay(backup_vocal_audio).overlay(instrumental_audio).export(output_path, format=output_format)
     
     def pitch_shift(self, audio_path: str, pitch_change: int) -> str:
         """Apply pitch shift to audio - using main.py logic"""
@@ -601,15 +549,16 @@ class AICoverGenHandler:
                                          f0_method: str = "rmvpe",
                                          crepe_hop_length: int = 128,
                                          pitch_change_all: int = 0,
-                                         reverb_rm_size: float = 0.25,
-                                         reverb_wet: float = 0.4,
-                                         reverb_dry: float = 0.6,
-                                         reverb_damping: float = 0.5,
+                                         reverb_rm_size: float = 0.15,
+                                         reverb_wet: float = 0.2,
+                                         reverb_dry: float = 0.8,
+                                         reverb_damping: float = 0.7,
                                          main_gain: int = 0,
                                          backup_gain: int = 0,
                                          inst_gain: int = 0,
                                          output_format: str = "mp3",
                                          return_type: str = "url",  # 'url' | 'base64', default to 'url'
+                                         save_converted_vocals: bool = False,  # 변환된 보컬 파일 저장 여부
                                          **kwargs) -> Dict[str, Any]:
         """
         Generate AI cover from separate voice and instrument audio files
@@ -637,9 +586,11 @@ class AICoverGenHandler:
             inst_gain: Volume change for instrumentals
             output_format: Output format of audio file
             return_type: 'url' for S3 URL output, 'base64' for base64 output
+            save_converted_vocals: Whether to save and return the converted vocals file
             
         Returns:
             Dict containing the generated audio file (URL or base64) and metadata
+            If save_converted_vocals=True, also includes converted_vocals_url or converted_vocals_audio
         """
         try:
             # Validate voice model
@@ -732,7 +683,7 @@ class AICoverGenHandler:
                 logger.info('[~] Combining AI Vocals and Instrumentals...')
                 ai_cover_path_wav = os.path.join(song_dir, f'cover_{voice_model}.wav')
                 self.combine_audio([ai_vocals_mixed_path, backup_vocals_path, instrument_path], 
-                                   ai_cover_path_wav, main_gain, backup_gain, inst_gain, output_format)
+                                   ai_cover_path_wav, main_gain, backup_gain, inst_gain, 'wav')
                 
                 # Convert to MP3 if requested
                 if (output_format or '').lower() == 'mp3':
@@ -742,6 +693,19 @@ class AICoverGenHandler:
                     audio_seg.export(final_output_path, format='mp3')
                 else:
                     final_output_path = ai_cover_path_wav
+                
+                # 변환된 보컬 파일 처리 (요청된 경우)
+                converted_vocals_path = None
+                if save_converted_vocals:
+                    logger.info('[~] Preparing converted vocals for output...')
+                    if (output_format or '').lower() == 'mp3':
+                        # MP3로 변환
+                        converted_vocals_path = os.path.join(song_dir, f'converted_vocals_{voice_model}.mp3')
+                        vocals_seg = AudioSegment.from_wav(ai_vocals_mixed_path)
+                        vocals_seg.export(converted_vocals_path, format='mp3')
+                    else:
+                        # WAV 그대로 사용
+                        converted_vocals_path = ai_vocals_mixed_path
                 
                 # Prepare result based on return_type
                 result = {
@@ -781,11 +745,28 @@ class AICoverGenHandler:
                                 audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
                             result["output_audio"] = audio_b64
                             result["return_type"] = "base64"
+                            
+                            # 변환된 보컬도 base64로 처리
+                            if save_converted_vocals and converted_vocals_path:
+                                with open(converted_vocals_path, 'rb') as f:
+                                    vocals_bytes = f.read()
+                                    vocals_b64 = base64.b64encode(vocals_bytes).decode('utf-8')
+                                result["converted_vocals_audio"] = vocals_b64
+                                result["converted_vocals_filename"] = os.path.basename(converted_vocals_path)
+                            
                             logger.info("[+] Base64 encoding completed (S3 fallback)")
                         else:
                             logger.info("[~] Uploading result to S3...")
                             output_url = _upload_to_s3(final_output_path, "audio")
                             result["output_url"] = output_url
+                            
+                            # 변환된 보컬도 S3에 업로드
+                            if save_converted_vocals and converted_vocals_path:
+                                converted_vocals_url = _upload_to_s3(converted_vocals_path, "audio")
+                                result["converted_vocals_url"] = converted_vocals_url
+                                result["converted_vocals_filename"] = os.path.basename(converted_vocals_path)
+                                logger.info(f"[+] Converted vocals uploaded: {converted_vocals_url}")
+                            
                             logger.info(f"[+] S3 upload completed: {output_url}")
                     else:
                         # Return as base64 (fallback)
@@ -794,6 +775,16 @@ class AICoverGenHandler:
                             audio_bytes = f.read()
                             audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
                         result["output_audio"] = audio_b64
+                        
+                        # 변환된 보컬도 base64로 처리
+                        if save_converted_vocals and converted_vocals_path:
+                            with open(converted_vocals_path, 'rb') as f:
+                                vocals_bytes = f.read()
+                                vocals_b64 = base64.b64encode(vocals_bytes).decode('utf-8')
+                            result["converted_vocals_audio"] = vocals_b64
+                            result["converted_vocals_filename"] = os.path.basename(converted_vocals_path)
+                            logger.info("[+] Converted vocals base64 encoding completed")
+                        
                         logger.info("[+] Base64 encoding completed")
                         
                 finally:

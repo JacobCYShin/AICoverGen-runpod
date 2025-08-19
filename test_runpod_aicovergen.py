@@ -68,9 +68,9 @@ def upload_to_s3(file_path: str, file_type: str = "audio") -> str:
         file_name = os.path.basename(file_path)
         
         if file_type == "audio":
-            s3_key = f"aicovergen-source/{timestamp}_{file_name}"
+            s3_key = f"source-audios/{timestamp}_{file_name}"
         else:
-            s3_key = f"aicovergen-misc/{timestamp}_{file_name}"
+            s3_key = f"source-images/{timestamp}_{file_name}"
         
         # S3에 업로드
         s3_client.upload_file(file_path, S3_BUCKET_NAME, s3_key)
@@ -88,15 +88,38 @@ def upload_to_s3(file_path: str, file_type: str = "audio") -> str:
 def download_from_s3_url(s3_url: str, local_path: str):
     """S3 URL에서 파일을 다운로드하여 로컬 경로에 저장합니다."""
     try:
-        response = requests.get(s3_url, stream=True, timeout=120)
-        response.raise_for_status()
-        
-        with open(local_path, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
-        
-        print(f"S3 다운로드 완료: {s3_url} -> {local_path}")
+        # 먼저 공개 URL로 시도
+        try:
+            response = requests.get(s3_url, stream=True, timeout=120)
+            response.raise_for_status()
+            
+            with open(local_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            print(f"S3 다운로드 완료 (공개 URL): {s3_url} -> {local_path}")
+            return
+            
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 403:
+                print(f"공개 URL 접근 거부됨. S3 인증으로 재시도: {s3_url}")
+                # S3 인증으로 다운로드 시도
+                s3_client = get_s3_client()
+                if s3_client is None:
+                    raise RuntimeError("S3 클라이언트를 초기화할 수 없습니다")
+                
+                # S3 URL에서 버킷과 키 추출
+                url_parts = s3_url.replace('https://', '').split('/')
+                bucket_name = url_parts[0].split('.')[0]
+                s3_key = '/'.join(url_parts[1:])
+                
+                # S3 클라이언트로 다운로드
+                s3_client.download_file(bucket_name, s3_key, local_path)
+                print(f"S3 다운로드 완료 (인증): {s3_url} -> {local_path}")
+                return
+            else:
+                raise
         
     except Exception as e:
         print(f"S3 다운로드 실패: {s3_url} - {e}")
@@ -192,6 +215,7 @@ class AICoverGenRunPodClient:
         poll_interval_sec: int = 5,
         max_wait_sec: int = 1800,
         use_s3: bool = True,  # New parameter to control S3 usage
+        save_converted_vocals: bool = False,  # 변환된 보컬 저장 여부
         **kwargs
     ) -> Dict[str, Any]:
         """
@@ -208,6 +232,7 @@ class AICoverGenRunPodClient:
             poll_interval_sec: 비동기 폴링 간격
             max_wait_sec: 비동기 최대 대기시간
             use_s3: True면 S3 URL 방식 사용, False면 base64 방식 사용
+            save_converted_vocals: 변환된 보컬 파일 저장 여부
             **kwargs: 추가 파라미터들
         """
         # 파일 크기 안내
@@ -233,6 +258,7 @@ class AICoverGenRunPodClient:
                         "pitch_adjust": pitch_adjust,
                         "output_format": output_format,
                         "return_type": return_type,
+                        "save_converted_vocals": save_converted_vocals,
                         **kwargs
                     }
                 }
@@ -259,6 +285,7 @@ class AICoverGenRunPodClient:
                         "pitch_adjust": pitch_adjust,
                         "output_format": output_format,
                         "return_type": return_type,
+                        "save_converted_vocals": save_converted_vocals,
                         **kwargs
                     }
                 }
@@ -330,6 +357,16 @@ class AICoverGenRunPodClient:
                 print(f"파일 저장됨: {path}")
                 saved_any = True
 
+            # 변환된 보컬 S3 URL 저장
+            if "converted_vocals_url" in response_data:
+                url = response_data["converted_vocals_url"]
+                filename = response_data.get("converted_vocals_filename", "converted_vocals.mp3")
+                print(f"변환된 보컬 S3에서 다운로드: {filename} <- {url}")
+                path = os.path.join(output_dir, filename)
+                download_from_s3_url(url, path)
+                print(f"변환된 보컬 파일 저장됨: {path}")
+                saved_any = True
+
             # 복수 URL 저장 (기존 형식 호환)
             if "output_urls" in response_data and isinstance(response_data["output_urls"], dict):
                 for filename, url in response_data["output_urls"].items():
@@ -346,6 +383,15 @@ class AICoverGenRunPodClient:
                 with open(path, "wb") as f:
                     f.write(base64.b64decode(response_data["output_audio"]))
                 print(f"파일 저장됨: {path}")
+                saved_any = True
+
+            # 변환된 보컬 base64 저장
+            if "converted_vocals_audio" in response_data:
+                filename = response_data.get("converted_vocals_filename", "converted_vocals.mp3")
+                path = os.path.join(output_dir, filename)
+                with open(path, "wb") as f:
+                    f.write(base64.b64decode(response_data["converted_vocals_audio"]))
+                print(f"변환된 보컬 파일 저장됨: {path}")
                 saved_any = True
 
             if not saved_any:
@@ -473,6 +519,13 @@ def parse_arguments():
         help="출력 반환 형식 (기본값: url)"
     )
     
+    parser.add_argument(
+        "--save-converted-vocals",
+        action="store_true",
+        default=False,
+        help="변환된 보컬 파일 저장 (기본값: False)"
+    )
+    
     return parser.parse_args()
 
 # ====== 전역 변수 ======
@@ -490,6 +543,7 @@ TRIM_SECONDS = 0
 USE_S3 = True
 USE_BASE64 = False
 RETURN_TYPE = "url"
+SAVE_CONVERTED_VOCALS = False
 
 # ====== 유틸 ======
 # 사용하지 않는 함수들 제거 (클라이언트 클래스로 대체됨)
@@ -581,15 +635,16 @@ def test_generate_cover(client):
             return_type=return_type_mode,
             use_runsync=True,
             use_s3=use_s3_mode,
+            save_converted_vocals=SAVE_CONVERTED_VOCALS,
             index_rate=0.5,
             filter_radius=3,
             rms_mix_rate=0.25,
             protect=0.33,
             f0_method="rmvpe",
-            reverb_rm_size=0.25,
-            reverb_wet=0.4,
-            reverb_dry=0.6,
-            reverb_damping=0.5,
+            reverb_rm_size=0.15,
+            reverb_wet=0.2,
+            reverb_dry=0.8,
+            reverb_damping=0.7,
             main_gain=0,
             backup_gain=0,
             inst_gain=0
@@ -625,6 +680,8 @@ def test_generate_cover(client):
                 
                 if "output_url" in result:
                     print(f"🔗 S3 출력 URL: {result['output_url']}")
+                if "converted_vocals_url" in result:
+                    print(f"🎤 변환된 보컬 S3 URL: {result['converted_vocals_url']}")
             else:
                 print("❌ 파일 저장 실패")
 
@@ -691,6 +748,7 @@ if __name__ == "__main__":
     USE_S3 = args.use_s3 and not args.use_base64  # base64가 명시적으로 지정되면 S3 비활성화
     USE_BASE64 = args.use_base64
     RETURN_TYPE = args.return_type
+    SAVE_CONVERTED_VOCALS = args.save_converted_vocals
     
     print("🎵 RunPod Serverless AICoverGen API 테스트 시작")
     print("="*60)
@@ -703,6 +761,7 @@ if __name__ == "__main__":
     print(f"   - 악기 파일: {INSTRUMENT_AUDIO_PATH}")
     print(f"   - 입력 방식: {'S3 URL' if USE_S3 else 'base64'}")
     print(f"   - 출력 방식: {RETURN_TYPE}")
+    print(f"   - 변환된 보컬 저장: {SAVE_CONVERTED_VOCALS}")
     print(f"   - S3 버킷: {S3_BUCKET_NAME}")
     print("="*60)
 
