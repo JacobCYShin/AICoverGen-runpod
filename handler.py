@@ -542,7 +542,7 @@ class AICoverGenHandler:
                                          instrument_audio_url: Optional[str] = None,  # S3 URL for instrument audio (preferred)
                                          voice_model: str = '',
                                          pitch_adjust: int = 0,
-                                         index_rate: float = 0.5,
+                                         index_rate: float = 0.75,
                                          filter_radius: int = 3,
                                          rms_mix_rate: float = 0.25,
                                          protect: float = 0.33,
