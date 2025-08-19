@@ -39,8 +39,8 @@ echo ""
 python3 test_separated_audio.py \
     --voice_input "tmp/Vocals_No_Noise.wav" \
     --inst_input "tmp/Instrumental.wav" \
-    --rvc_dirname "$VOICE_MODEL" \
-    --pitch_change_all "$PITCH_CHANGE_ALL" \
+    --rvc_dirname "Jungkook" \
+    --pitch_change_all 0 \
     --output_format "mp3"
 
 echo ""

@@ -385,7 +385,10 @@ class AICoverGenHandler:
                 "S3_BUCKET_NAME": S3_BUCKET_NAME
             },
             "supported_input_types": ["voice_audio_url", "instrument_audio_url"] if S3_AVAILABLE else ["voice_audio", "instrument_audio"],
-            "supported_return_types": ["url", "base64"] if S3_AVAILABLE else ["base64"]
+            "supported_return_types": ["url", "base64"] if S3_AVAILABLE else ["base64"],
+            "code_version": "backup_vocals_removed_v2.1",  # 코드 변경 확인용 마커
+            "backup_vocals_removed": True,  # 백업 보컬 제거 확인
+            "combine_audio_signature": "main_gain_inst_gain_only"  # 함수 시그니처 확인
         }
     
     def list_models(self) -> Dict[str, Any]:

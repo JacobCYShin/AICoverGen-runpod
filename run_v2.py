@@ -39,7 +39,7 @@ def generate_ai_cover(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate an AI cover song.")
     parser.add_argument("--song_input", type=str, default='https://www.youtube.com/watch?v=ICCgV4ZZEhE', help="Link to a YouTube video or the filepath to a local mp3/wav file to create an AI cover of")
-    parser.add_argument("--rvc_dirname", type=str, default='Jimin', help="Name of the folder in the rvc_models directory containing the RVC model file and optional index file to use")
+    parser.add_argument("--rvc_dirname", type=str, default='Jungkook', help="Name of the folder in the rvc_models directory containing the RVC model file and optional index file to use")
     parser.add_argument("--pitch_change", type=int, default=0, help="Change the pitch of AI Vocals only. Generally, use 1 for male to female and -1 for vice-versa. (Octaves)")
     parser.add_argument("--pitch_change_all", type=int, default=-4, help="Change the pitch/key of vocals and instrumentals. Changing this slightly reduces sound quality")
     parser.add_argument("--index_rate", type=float, default=0.75, help="A decimal number e.g. 0.5, used to reduce/resolve the timbre leakage problem. If set to 1, more biased towards the timbre quality of the training dataset")

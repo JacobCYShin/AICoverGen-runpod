@@ -547,6 +547,102 @@ def test_health_check(client):
         return False
 
 
+def test_code_version_check(client):
+    """코드 버전 및 캐시 상태 확인"""
+    print("🔍 서버 코드 버전 확인 중...")
+    
+    try:
+        # 헬스체크를 통해 현재 서버 상태 확인
+        payload = {"input": {"operation": "health_check"}}
+        response = client.session.post(client.url_runsync, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            result = client._unwrap_output(response.json())
+            
+            print("🔧 서버 환경 정보:")
+            print(f"   ✅ 상태: {result.get('status', 'N/A')}")
+            print(f"   🖥️ 디바이스: {result.get('device', 'N/A')}")
+            print(f"   🎮 GPU 사용 가능: {result.get('gpu_available', 'N/A')}")
+            
+            # combine_audio 함수 시그니처 확인을 위한 특별 테스트
+            print("\n🔍 백업 보컬 제거 확인:")
+            if "available_models" in result:
+                models = result["available_models"]
+                print(f"   📋 사용 가능한 모델: {models}")
+                if "Jimin" in models:
+                    print("   ✅ Jimin 모델 감지됨")
+                else:
+                    print("   ❌ Jimin 모델 감지되지 않음")
+            
+            # 지원되는 입력/출력 타입 확인
+            if "supported_input_types" in result:
+                print(f"   📥 지원 입력 타입: {result['supported_input_types']}")
+            if "supported_return_types" in result:
+                print(f"   📤 지원 출력 타입: {result['supported_return_types']}")
+                
+            return True
+        else:
+            print(f"❌ 코드 버전 확인 실패: {response.status_code}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ 코드 버전 확인 중 오류: {str(e)}")
+        return False
+
+def test_check_model_files(client):
+    """모델 파일 상태 확인 테스트"""
+    print("📁 모델 파일 상태 확인 중...")
+    
+    try:
+        # 클라이언트를 사용하여 모델 파일 상태 확인
+        payload = {"input": {"operation": "check_model_files"}}
+        response = client.session.post(client.url_runsync, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            result = client._unwrap_output(response.json())
+            
+            # RVC 기본 모델들
+            if "rvc_base_models" in result:
+                print("\n🔧 RVC 기본 모델들:")
+                for model_name, info in result["rvc_base_models"].items():
+                    status = "✅" if info["exists"] else "❌"
+                    print(f"   {status} {model_name}: {info['size_mb']}MB")
+            
+            # Voice 모델들
+            if "voice_models" in result:
+                print("\n🎤 Voice 모델들:")
+                for model_name, info in result["voice_models"].items():
+                    status = "✅" if info["exists"] else "❌"
+                    files = info.get("files", [])
+                    pth_files = [f for f in files if f.endswith('.pth')]
+                    index_files = [f for f in files if f.endswith('.index')]
+                    
+                    print(f"   {status} {model_name}:")
+                    print(f"      📂 경로: {info['path']}")
+                    print(f"      📄 전체 파일: {files}")
+                    print(f"      🎯 .pth 파일: {pth_files}")
+                    print(f"      📊 .index 파일: {index_files}")
+                    
+                    if not pth_files:
+                        print(f"      ⚠️ 경고: {model_name} 모델에 .pth 파일이 없습니다!")
+            
+            # 볼륨 정보
+            volume_exists = result.get("runpod_volume_exists", False)
+            models_dir = result.get("runpod_rvc_models_dir", "N/A")
+            print(f"\n💾 볼륨 정보:")
+            print(f"   볼륨 존재: {'✅' if volume_exists else '❌'}")
+            print(f"   모델 디렉토리: {models_dir}")
+            
+            return result
+        else:
+            print(f"❌ 모델 파일 상태 확인 실패: {response.status_code}")
+            print(f"응답: {response.text}")
+            return {}
+            
+    except Exception as e:
+        print(f"❌ 모델 파일 상태 확인 중 오류: {str(e)}")
+        return {}
+
 def test_list_models(client):
     """사용 가능한 모델 목록 테스트"""
     print("📋 사용 가능한 모델 목록 조회 중...")
@@ -739,7 +835,17 @@ if __name__ == "__main__":
 
     print("\n" + "="*60)
 
-    # 2. 사용 가능한 모델 확인
+    # 2. 코드 버전 확인 (캐시 문제 디버깅용)
+    test_code_version_check(client)
+    
+    print("\n" + "="*60)
+
+    # 3. 모델 파일 상태 확인
+    test_check_model_files(client)
+    
+    print("\n" + "="*60)
+
+    # 3. 사용 가능한 모델 확인
     available_models = test_list_models(client)
     if VOICE_MODEL not in available_models:
         print(f"⚠️ 경고: '{VOICE_MODEL}' 모델이 사용 가능한 모델 목록에 없습니다.")
