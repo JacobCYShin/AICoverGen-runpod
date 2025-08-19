@@ -524,12 +524,11 @@ class AICoverGenHandler:
         return output_path
     
     def combine_audio(self, audio_paths: list, output_path: str, main_gain: int, 
-                     backup_gain: int, inst_gain: int, output_format: str):
+                     inst_gain: int, output_format: str):
         """Combine AI vocals and instrumentals - using main.py logic"""
         main_vocal_audio = AudioSegment.from_wav(audio_paths[0]) - 4 + main_gain
-        backup_vocal_audio = AudioSegment.from_wav(audio_paths[1]) - 6 + backup_gain
-        instrumental_audio = AudioSegment.from_wav(audio_paths[2]) - 7 + inst_gain
-        main_vocal_audio.overlay(backup_vocal_audio).overlay(instrumental_audio).export(output_path, format=output_format)
+        instrumental_audio = AudioSegment.from_wav(audio_paths[1]) - 7 + inst_gain
+        main_vocal_audio.overlay(instrumental_audio).export(output_path, format=output_format)
     
     def pitch_shift(self, audio_path: str, pitch_change: int) -> str:
         """Apply pitch shift to audio - using main.py logic"""
@@ -554,7 +553,7 @@ class AICoverGenHandler:
                                          reverb_dry: float = 0.8,
                                          reverb_damping: float = 0.7,
                                          main_gain: int = 0,
-                                         backup_gain: int = 0,
+
                                          inst_gain: int = 0,
                                          output_format: str = "mp3",
                                          return_type: str = "url",  # 'url' | 'base64', default to 'url'
@@ -581,7 +580,7 @@ class AICoverGenHandler:
             reverb_dry: Reverb dry level
             reverb_damping: Reverb damping
             main_gain: Volume change for AI main vocals
-            backup_gain: Volume change for backup vocals
+
             inst_gain: Volume change for instrumentals
             output_format: Output format of audio file
             return_type: 'url' for S3 URL output, 'base64' for base64 output
@@ -671,16 +670,12 @@ class AICoverGenHandler:
                 if pitch_change_all != 0:
                     logger.info('[~] Applying overall pitch change')
                     instrument_path = self.pitch_shift(instrument_path, pitch_change_all)
-                    # For backup vocals, we'll use the original voice with pitch shift
-                    backup_vocals_path = self.pitch_shift(voice_path, pitch_change_all)
-                else:
-                    backup_vocals_path = voice_path
                 
                 # Combine AI vocals and instrumentals (main.py 302-303 lines equivalent)
                 logger.info('[~] Combining AI Vocals and Instrumentals...')
                 ai_cover_path_wav = os.path.join(song_dir, f'cover_{voice_model}.wav')
-                self.combine_audio([ai_vocals_mixed_path, backup_vocals_path, instrument_path], 
-                                   ai_cover_path_wav, main_gain, backup_gain, inst_gain, 'wav')
+                self.combine_audio([ai_vocals_mixed_path, instrument_path], 
+                                   ai_cover_path_wav, main_gain, inst_gain, 'wav')
                 
                 # Convert to MP3 if requested
                 if (output_format or '').lower() == 'mp3':
@@ -711,7 +706,7 @@ class AICoverGenHandler:
                         "reverb_dry": reverb_dry,
                         "reverb_damping": reverb_damping,
                         "main_gain": main_gain,
-                        "backup_gain": backup_gain,
+
                         "inst_gain": inst_gain,
                         "output_format": (output_format or 'wav')
                     }
