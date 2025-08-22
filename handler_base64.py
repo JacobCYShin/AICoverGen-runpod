@@ -574,7 +574,7 @@ class AICoverGenHandler:
                 if (output_format or '').lower() == 'mp3':
                     logger.info('[~] Converting WAV to MP3...')
                     final_output_path = os.path.join(song_dir, f'cover_{voice_model}.mp3')
-                    audio_seg = AudioSegment.from_wav(ai_cover_path_wav)
+                    audio_seg = AudioSegment.from_file(ai_cover_path_wav)
                     audio_seg.export(final_output_path, format='mp3')
                 else:
                     final_output_path = ai_cover_path_wav

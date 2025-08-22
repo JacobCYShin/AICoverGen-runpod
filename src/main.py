@@ -227,8 +227,8 @@ def add_audio_effects(audio_path, reverb_rm_size, reverb_wet, reverb_dry, reverb
 
 
 def combine_audio(audio_paths, output_path, main_gain, inst_gain, output_format):
-    main_vocal_audio = AudioSegment.from_wav(audio_paths[0]) - 4 + main_gain
-    instrumental_audio = AudioSegment.from_wav(audio_paths[1]) - 7 + inst_gain
+    main_vocal_audio = AudioSegment.from_file(audio_paths[0]) - 4 + main_gain
+    instrumental_audio = AudioSegment.from_file(audio_paths[1]) - 7 + inst_gain
     main_vocal_audio.overlay(instrumental_audio).export(output_path, format=output_format)
 
 

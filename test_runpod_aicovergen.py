@@ -690,7 +690,7 @@ def test_generate_cover(client):
         print(f"📊 입력 방식: {'S3 URL' if use_s3_mode else 'base64'}")
         print(f"📊 출력 방식: {return_type_mode}")
 
-        # 클라이언트를 사용하여 AI 커버 생성
+        # 클라이언트를 사용하여 AI 커버 생성 (main.py 기본값과 일치)
         result = client.generate_cover(
             voice_audio_path=VOICE_AUDIO_PATH,
             instrument_audio_path=INSTRUMENT_AUDIO_PATH,
@@ -700,18 +700,20 @@ def test_generate_cover(client):
             return_type=return_type_mode,
             use_runsync=True,
             use_s3=use_s3_mode,
-            index_rate=0.5,
-            filter_radius=3,
-            rms_mix_rate=0.25,
-            protect=0.33,
-            f0_method="rmvpe",
-            reverb_rm_size=0.25,
-            reverb_wet=0.4,
-            reverb_dry=0.6,
-            reverb_damping=0.5,
-            main_gain=0,
-            backup_gain=0,
-            inst_gain=0
+            # main.py 기본값들
+            index_rate=0.75,                # main.py: 0.75
+            filter_radius=3,                # main.py: 3
+            rms_mix_rate=0.25,             # main.py: 0.25
+            protect=0.33,                  # main.py: 0.33
+            f0_method="rmvpe",             # main.py: rmvpe
+            crepe_hop_length=128,          # main.py: 128
+            reverb_rm_size=0.15,           # main.py: 0.15
+            reverb_wet=0.2,                # main.py: 0.2
+            reverb_dry=0.8,                # main.py: 0.8
+            reverb_damping=0.7,            # main.py: 0.7
+            main_gain=0,                   # main.py: 0
+            inst_gain=0,                   # main.py: 0
+            pitch_change_all=0             # main.py: 0
         )
 
         processing_time = time.time() - start_time

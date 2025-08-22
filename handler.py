@@ -529,9 +529,26 @@ class AICoverGenHandler:
     def combine_audio(self, audio_paths: list, output_path: str, main_gain: int, 
                      inst_gain: int, output_format: str):
         """Combine AI vocals and instrumentals - using main.py logic"""
-        main_vocal_audio = AudioSegment.from_wav(audio_paths[0]) - 4 + main_gain
-        instrumental_audio = AudioSegment.from_wav(audio_paths[1]) - 7 + inst_gain
-        main_vocal_audio.overlay(instrumental_audio).export(output_path, format=output_format)
+        # 디버깅 정보 출력
+        logger.info(f"🎵 오디오 파일 결합 중:")
+        logger.info(f"   보컬 파일: {audio_paths[0]}")
+        logger.info(f"   악기 파일: {audio_paths[1]}")
+        logger.info(f"   출력 경로: {output_path}")
+        logger.info(f"   main_gain: {main_gain}, inst_gain: {inst_gain}")
+        
+        try:
+            # 파일 형식 자동 감지 (WAV/MP3 모두 지원)
+            main_vocal_audio = AudioSegment.from_file(audio_paths[0]) - 4 + main_gain
+            instrumental_audio = AudioSegment.from_file(audio_paths[1]) - 7 + inst_gain
+            main_vocal_audio.overlay(instrumental_audio).export(output_path, format=output_format)
+            logger.info(f"✅ 오디오 결합 완료: {output_path}")
+        except Exception as e:
+            logger.error(f"❌ 오디오 결합 실패: {str(e)}")
+            # 파일 존재 여부 확인
+            for i, path in enumerate(audio_paths):
+                exists = os.path.exists(path) if path.startswith('/') else True  # S3 URL인 경우 존재한다고 가정
+                logger.error(f"   파일 {i}: {path} - 존재: {exists}")
+            raise
     
     def pitch_shift(self, audio_path: str, pitch_change: int) -> str:
         """Apply pitch shift to audio - using main.py logic"""
@@ -684,7 +701,7 @@ class AICoverGenHandler:
                 if (output_format or '').lower() == 'mp3':
                     logger.info('[~] Converting WAV to MP3...')
                     final_output_path = os.path.join(song_dir, f'cover_{voice_model}.mp3')
-                    audio_seg = AudioSegment.from_wav(ai_cover_path_wav)
+                    audio_seg = AudioSegment.from_file(ai_cover_path_wav)
                     audio_seg.export(final_output_path, format='mp3')
                 else:
                     final_output_path = ai_cover_path_wav
