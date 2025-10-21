@@ -60,7 +60,7 @@ logger = logging.getLogger(__name__)
 # AWS S3 설정 (환경변수에서 가져오기)
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
-AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
+AWS_REGION = os.getenv('AWS_REGION', 'ap-northeast-2')
 S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'likebutter-bucket')
 
 # S3 사용 가능 여부 체크
