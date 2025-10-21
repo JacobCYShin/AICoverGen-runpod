@@ -61,7 +61,7 @@ logger = logging.getLogger(__name__)
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 AWS_REGION = os.getenv('AWS_REGION', 'ap-northeast-2')
-S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'likebutter-bucket')
+S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME', 'likebutter-prod-storage')
 
 # S3 사용 가능 여부 체크
 S3_AVAILABLE = bool(AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY and S3_BUCKET_NAME)
