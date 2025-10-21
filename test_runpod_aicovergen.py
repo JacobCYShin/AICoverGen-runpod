@@ -68,7 +68,7 @@ def upload_to_s3(file_path: str, file_type: str = "audio") -> str:
         file_name = os.path.basename(file_path)
         
         if file_type == "audio":
-            s3_key = f"source-audios/{timestamp}_{file_name}"
+            s3_key = f"audios/separated-audios/{timestamp}_{file_name}"
         else:
             s3_key = f"source-images/{timestamp}_{file_name}"
         
